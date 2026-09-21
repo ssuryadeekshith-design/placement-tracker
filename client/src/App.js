@@ -178,5 +178,4 @@ function App() {
   );
 }
 
-App; // keep export default App
 export default App;
