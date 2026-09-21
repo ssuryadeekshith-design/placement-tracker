@@ -13,7 +13,8 @@ function App() {
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [mandatoryEventCount, setMandatoryEventCount] = useState(0);
   
-  // Student Login State
+  // Student Portal State (Cohort + Suffix search)
+  const [studentCohort, setStudentCohort] = useState('IPM');
   const [searchRoll, setSearchRoll] = useState("");
   const [loggedInStudent, setLoggedInStudent] = useState(null);
 
@@ -41,27 +42,27 @@ function App() {
     return percentage.toFixed(1);
   };
 
-  // Smart Student Login: Allows typing full roll number OR just the trailing digits (e.g. "09" or "9")
+  // Smart Student Login: Uses Cohort + Suffix (e.g. IPM + 9 matches 2023-5IPM-09)
   const handleStudentLogin = () => {
-    const cleanInput = searchRoll.trim().toLowerCase();
+    const cleanInput = searchRoll.trim();
     if (!cleanInput) {
-      alert("Please enter a roll number or ID.");
+      alert("Please enter your roll number ID.");
       return;
     }
 
-    const matchedStudents = students.filter(s => {
-      const roll = s.rollNumber.toLowerCase();
-      return roll === cleanInput || 
-             roll.endsWith('-' + cleanInput) || 
-             roll.endsWith('-0' + cleanInput);
+    const matchedStudent = students.find(s => {
+      const rollUpper = s.rollNumber.toUpperCase();
+      const matchesGroup = rollUpper.includes(studentCohort);
+      const matchesSuffix = rollUpper.endsWith('-' + cleanInput) || 
+                            rollUpper.endsWith('-0' + cleanInput) ||
+                            rollUpper === cleanInput;
+      return matchesGroup && matchesSuffix;
     });
 
-    if (matchedStudents.length === 1) {
-      setLoggedInStudent(matchedStudents[0]);
-    } else if (matchedStudents.length > 1) {
-      alert(`Multiple students matched "${cleanInput}". Please type your full Roll Number.`);
+    if (matchedStudent) {
+      setLoggedInStudent(matchedStudent);
     } else {
-      alert("Roll Number not found in the placement database!");
+      alert(`❌ No ${studentCohort} student found matching ID: "${cleanInput}"`);
     }
   };
 
@@ -204,20 +205,27 @@ function App() {
           </main>
         </div>
       ) : (
-        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+        <div style={{ maxWidth: '450px', margin: '0 auto' }}>
           {!loggedInStudent ? (
-            <div style={{ background: '#fff', padding: '50px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-              <TrendingUp size={50} color="#3498db" />
-              <h2>Student Portal</h2>
-              <p>Enter your Roll Number or last digits (e.g. 9 or 60) to check your attendance.</p>
-              <div style={{ marginTop: '20px' }}>
-                <input type="text" placeholder="e.g., 2023-5IPM-09 or just 9" autoComplete="off" style={{ padding: '15px', width: '300px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px' }} value={searchRoll} onChange={(e)=>setSearchRoll(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleStudentLogin()} />
-                <button onClick={handleStudentLogin} style={{ padding: '15px 25px', marginLeft: '10px', background: '#3498db', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Check Attendance</button>
+            <div style={{ background: '#fff', padding: '40px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+              <TrendingUp size={40} color="#3498db" style={{ margin: '0 auto 15px auto' }} />
+              <h2 style={{ marginTop: 0 }}>Student Portal</h2>
+              <p style={{ color: '#666', fontSize: '14px', marginBottom: '20px' }}>Select your cohort and enter your roll number ID to check your attendance.</p>
+              
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', display: 'block', textAlign: 'left', marginBottom: '5px' }}>Select Cohort:</label>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                <button type="button" onClick={() => setStudentCohort('IPM')} style={{ flex: 1, padding: '10px', background: studentCohort === 'IPM' ? '#2980b9' : '#ecf0f1', color: studentCohort === 'IPM' ? '#fff' : '#333', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>IPM</button>
+                <button type="button" onClick={() => setStudentCohort('MBA')} style={{ flex: 1, padding: '10px', background: studentCohort === 'MBA' ? '#2980b9' : '#ecf0f1', color: studentCohort === 'MBA' ? '#fff' : '#333', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>MBA</button>
               </div>
+
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', display: 'block', textAlign: 'left', marginBottom: '5px' }}>Roll Number Suffix / ID:</label>
+              <input type="text" placeholder="e.g. 9 or 60" autoComplete="off" style={{ padding: '12px', width: '100%', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #ddd', fontSize: '16px', marginBottom: '15px' }} value={searchRoll} onChange={(e)=>setSearchRoll(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleStudentLogin()} />
+              
+              <button onClick={handleStudentLogin} style={{ padding: '12px', width: '100%', background: '#3498db', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>Check Attendance</button>
             </div>
           ) : (
             <div style={{ background: '#fff', padding: '40px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-              <button onClick={() => setLoggedInStudent(null)} style={{ marginBottom: '20px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '16px', fontWeight: 'bold' }}><ArrowLeft size={18} /> Search Another Roll Number</button>
+              <button onClick={() => setLoggedInStudent(null)} style={{ marginBottom: '20px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '16px', fontWeight: 'bold' }}><ArrowLeft size={18} /> Search Another ID</button>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #eee', paddingBottom: '20px' }}>
                 <div>
                   <h2 style={{ margin: 0 }}>{loggedInStudent.fullName}</h2>
