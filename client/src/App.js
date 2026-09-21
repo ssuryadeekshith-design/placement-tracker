@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Calendar, CheckCircle, TrendingUp } from 'lucide-react';
+import { Users, Calendar, CheckCircle, AlertCircle, TrendingUp, Lock, ArrowLeft } from 'lucide-react';
 
-// Points directly to our live cloud backend on Render
 const API = "https://placement-tracker-lyjf.onrender.com/api";
+
 function App() {
-  const [view, setView] = useState('admin');
+  const [view, setView] = useState('student'); // Defaults strictly to Student view
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  
   const [students, setStudents] = useState([]);
   const [events, setEvents] = useState([]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [mandatoryEventCount, setMandatoryEventCount] = useState(0);
   
+  // Student Login State
   const [searchRoll, setSearchRoll] = useState("");
   const [loggedInStudent, setLoggedInStudent] = useState(null);
 
+  // Form States
   const [newTrack, setNewTrack] = useState({ eventId: '', rollNumber: '' });
   const [newEvent, setNewEvent] = useState({ title: '', date: '', isMandatory: true });
 
@@ -40,7 +44,17 @@ function App() {
   const handleStudentLogin = () => {
     const student = students.find(s => s.rollNumber.toLowerCase() === searchRoll.toLowerCase());
     if (student) { setLoggedInStudent(student); } 
-    else { alert("Roll Number not found!"); }
+    else { alert("Roll Number not found in the placement database!"); }
+  };
+
+  const triggerAdminLogin = () => {
+    const passcode = prompt("Enter Placement Committee Admin Passcode:");
+    if (passcode === "Psd2026") { // Secure committee passcode
+      setIsAdminAuthenticated(true);
+      setView('admin');
+    } else if (passcode !== null) {
+      alert("Incorrect Admin Passcode!");
+    }
   };
 
   const markAttendance = async (e) => {
@@ -50,7 +64,7 @@ function App() {
       return;
     }
     await axios.post(`${API}/attendance`, newTrack);
-    alert(`Attendance marked for ${newTrack.rollNumber}`);
+    alert(`Attendance marked for Roll No: ${newTrack.rollNumber}`);
     setNewTrack({ ...newTrack, rollNumber: '' });
     fetchData();
   };
@@ -73,13 +87,20 @@ function App() {
           <h1 style={{ margin: 0, fontSize: '24px' }}>TPAC</h1>
           <p style={{ margin: 0, opacity: 0.8 }}>University Placement Cell</p>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.1)', padding: '5px', borderRadius: '8px' }}>
-          <button onClick={() => setView('admin')} style={{ padding: '10px 20px', cursor: 'pointer', background: view === 'admin' ? '#fff' : 'transparent', color: view === 'admin' ? '#1a365d' : '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>Admin Panel</button>
-          <button onClick={() => setView('student')} style={{ padding: '10px 20px', cursor: 'pointer', background: view === 'student' ? '#fff' : 'transparent', color: view === 'student' ? '#1a365d' : '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>Student Portal</button>
+        <div>
+          {view === 'admin' ? (
+            <button onClick={() => { setView('student'); setLoggedInStudent(null); }} style={{ padding: '10px 20px', cursor: 'pointer', background: '#e74c3c', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
+              Exit Admin Panel
+            </button>
+          ) : (
+            <button onClick={triggerAdminLogin} style={{ padding: '10px 15px', cursor: 'pointer', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Lock size={16} /> Committee Admin Login
+            </button>
+          )}
         </div>
       </header>
 
-      {view === 'admin' ? (
+      {view === 'admin' && isAdminAuthenticated ? (
         <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '25px' }}>
           <aside>
             <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
@@ -136,18 +157,20 @@ function App() {
           {!loggedInStudent ? (
             <div style={{ background: '#fff', padding: '50px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
               <TrendingUp size={50} color="#3498db" />
-              <h2>Student Login</h2>
-              <p>Enter your unique Roll Number to view your attendance metrics</p>
-              <input type="text" placeholder="Enter Roll Number" style={{ padding: '15px', width: '300px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '18px' }} value={searchRoll} onChange={(e)=>setSearchRoll(e.target.value)} />
-              <button onClick={handleStudentLogin} style={{ padding: '15px 30px', marginLeft: '10px', background: '#3498db', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>View My Stats</button>
+              <h2>Student Portal</h2>
+              <p>Enter your unique Roll Number to check your personal placement attendance metrics.</p>
+              <div style={{ marginTop: '20px' }}>
+                <input type="text" placeholder="Enter Roll Number (e.g., 2024...)" style={{ padding: '15px', width: '280px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px' }} value={searchRoll} onChange={(e)=>setSearchRoll(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleStudentLogin()} />
+                <button onClick={handleStudentLogin} style={{ padding: '15px 25px', marginLeft: '10px', background: '#3498db', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Check Attendance</button>
+              </div>
             </div>
           ) : (
             <div style={{ background: '#fff', padding: '40px', borderRadius: '15px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-              <button onClick={() => setLoggedInStudent(null)} style={{ marginBottom: '20px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}>← Back to Search</button>
+              <button onClick={() => setLoggedInStudent(null)} style={{ marginBottom: '20px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '16px', fontWeight: 'bold' }}><ArrowLeft size={18} /> Search Another Roll Number</button>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #eee', paddingBottom: '20px' }}>
                 <div>
                   <h2 style={{ margin: 0 }}>{loggedInStudent.fullName}</h2>
-                  <p style={{ margin: 0, color: '#666' }}>ID: {loggedInStudent.rollNumber} | {loggedInStudent.email}</p>
+                  <p style={{ margin: 0, color: '#666' }}>Roll No: {loggedInStudent.rollNumber} | {loggedInStudent.email}</p>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '40px', fontWeight: 'bold', color: calculateAttendance(loggedInStudent.rollNumber) >= 75 ? '#27ae60' : '#e74c3c' }}>
@@ -158,16 +181,16 @@ function App() {
               </div>
               
               <div style={{ marginTop: '30px' }}>
-                <h3>Attendance History</h3>
+                <h3>Event History</h3>
                 {attendanceLogs.filter(l => l.rollNumber === loggedInStudent.rollNumber).length > 0 ? (
                   attendanceLogs.filter(l => l.rollNumber === loggedInStudent.rollNumber).map((log, i) => (
-                    <div key={i} style={{ padding: '15px', background: '#f8f9fa', borderRadius: '8px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
-                      <span><strong>Event:</strong> {events.find(e => e.id === log.eventId)?.title}</span>
-                      <span style={{ color: '#27ae60' }}><CheckCircle size={16} /> Present</span>
+                    <div key={i} style={{ padding: '15px', background: '#f8f9fa', borderRadius: '8px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span><strong>Event:</strong> {events.find(e => e.id === log.eventId)?.title || "Placement Drive"}</span>
+                      <span style={{ color: '#27ae60', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' }}><CheckCircle size={16} /> Present</span>
                     </div>
                   ))
                 ) : (
-                  <p>No attendance logs found for this student.</p>
+                  <p style={{ color: '#666', fontStyle: 'italic' }}>No attendance logs recorded yet for this student.</p>
                 )}
               </div>
             </div>
@@ -177,4 +200,5 @@ function App() {
     </div>
   );
 }
+
 export default App;
