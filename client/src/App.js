@@ -205,7 +205,7 @@ function App() {
           </main>
         </div>
       ) : (
-        <div style={{ maxWidth: '450px', margin: '0 auto' }}>
+        <div style={{ maxWidth: loggedInStudent ? '700px' : '450px', margin: '0 auto', transition: 'max-width 0.3s ease' }}>
           {!loggedInStudent ? (
             <div style={{ background: '#fff', padding: '40px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
               <TrendingUp size={40} color="#3498db" style={{ margin: '0 auto 15px auto' }} />
