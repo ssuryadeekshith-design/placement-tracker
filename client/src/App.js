@@ -71,7 +71,7 @@ function App() {
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: '#1a365d', padding: '20px', borderRadius: '12px', color: '#fff' }}>
         <div>
           <h1 style={{ margin: 0, fontSize: '24px' }}>TPAC</h1>
-          <p style={{ margin: 0, opacity: 0.8 }}>University Placement Committee</p>
+          <p style={{ margin: 0, opacity: 0.8 }}>University Placement Cell</p>
         </div>
         <div style={{ background: 'rgba(255,255,255,0.1)', padding: '5px', borderRadius: '8px' }}>
           <button onClick={() => setView('admin')} style={{ padding: '10px 20px', cursor: 'pointer', background: view === 'admin' ? '#fff' : 'transparent', color: view === 'admin' ? '#1a365d' : '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>Admin Panel</button>
