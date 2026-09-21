@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Calendar, CheckCircle, TrendingUp, Lock, ArrowLeft } from 'lucide-react';
+import { Users, Calendar, CheckCircle, AlertCircle, TrendingUp, Lock, ArrowLeft } from 'lucide-react';
 
 const API = "https://placement-tracker-lyjf.onrender.com/api";
 
 function App() {
-  const [view, setView] = useState('student'); // Defaults strictly to Student view
+  const [view, setView] = useState('student');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   
   const [students, setStudents] = useState([]);
@@ -17,8 +17,8 @@ function App() {
   const [searchRoll, setSearchRoll] = useState("");
   const [loggedInStudent, setLoggedInStudent] = useState(null);
 
-  // Form States
-  const [newTrack, setNewTrack] = useState({ eventId: '', rollNumber: '' });
+  // Admin Check-in State (Cohort + Short ID)
+  const [newTrack, setNewTrack] = useState({ eventId: '', cohort: 'IPM', shortId: '' });
   const [newEvent, setNewEvent] = useState({ title: '', date: '', isMandatory: true });
 
   useEffect(() => { fetchData(); }, []);
@@ -49,7 +49,7 @@ function App() {
 
   const triggerAdminLogin = () => {
     const passcode = prompt("Enter Placement Committee Admin Passcode:");
-    if (passcode === "Psd2026") { // Secure committee passcode
+    if (passcode === "Psd2026") {
       setIsAdminAuthenticated(true);
       setView('admin');
     } else if (passcode !== null) {
@@ -59,14 +59,39 @@ function App() {
 
   const markAttendance = async (e) => {
     e.preventDefault();
-    if (!newTrack.eventId || !newTrack.rollNumber) {
-      alert("Please select an event and type a roll number.");
+    if (!newTrack.eventId || !newTrack.cohort || !newTrack.shortId) {
+      alert("Please select an event, choose IPM/MBA, and enter the roll number suffix.");
       return;
     }
-    await axios.post(`${API}/attendance`, newTrack);
-    alert(`Attendance marked for Roll No: ${newTrack.rollNumber}`);
-    setNewTrack({ ...newTrack, rollNumber: '' });
-    fetchData();
+
+    const cleanInput = newTrack.shortId.trim();
+
+    // Smart Matcher: Finds the student matching the cohort and trailing number (e.g. 9 matches 2023-5IPM-09)
+    const matchedStudent = students.find(s => {
+      const rollUpper = s.rollNumber.toUpperCase();
+      const matchesGroup = rollUpper.includes(newTrack.cohort);
+      const matchesSuffix = rollUpper.endsWith('-' + cleanInput) || 
+                            rollUpper.endsWith('-0' + cleanInput) ||
+                            rollUpper === cleanInput;
+      return matchesGroup && matchesSuffix;
+    });
+
+    if (!matchedStudent) {
+      alert(`❌ No ${newTrack.cohort} student found ending with ID: "${cleanInput}"`);
+      return;
+    }
+
+    try {
+      await axios.post(`${API}/attendance`, {
+        eventId: newTrack.eventId,
+        rollNumber: matchedStudent.rollNumber
+      });
+      alert(`✅ Marked Present: ${matchedStudent.fullName} (${matchedStudent.rollNumber})`);
+      setNewTrack({ ...newTrack, shortId: '' });
+      fetchData();
+    } catch (err) {
+      alert("Error marking attendance");
+    }
   };
 
   const createEvent = async (e) => {
@@ -101,7 +126,7 @@ function App() {
       </header>
 
       {view === 'admin' && isAdminAuthenticated ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '25px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '25px' }}>
           <aside>
             <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
               <h3 style={{ marginTop: 0 }}><Calendar size={20} /> Create New Event</h3>
@@ -111,12 +136,22 @@ function App() {
             </div>
 
             <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginTop: 0 }}><CheckCircle size={20} /> Attendance Check-in</h3>
-              <select style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewTrack({...newTrack, eventId: e.target.value})}>
+              <h3 style={{ marginTop: 0 }}><CheckCircle size={20} /> Smart Check-In</h3>
+              <select style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} value={newTrack.eventId} onChange={(e) => setNewTrack({...newTrack, eventId: e.target.value})}>
                 <option value="">Select Event</option>
                 {events.map(ev => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
               </select>
-              <input type="text" placeholder="Scan or Type Roll No" value={newTrack.rollNumber} style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewTrack({...newTrack, rollNumber: e.target.value})} />
+
+              {/* Cohort Selector (IPM / MBA) */}
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '5px' }}>Select Cohort:</label>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                <button type="button" onClick={() => setNewTrack({...newTrack, cohort: 'IPM'})} style={{ flex: 1, padding: '10px', background: newTrack.cohort === 'IPM' ? '#2980b9' : '#ecf0f1', color: newTrack.cohort === 'IPM' ? '#fff' : '#333', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>IPM</button>
+                <button type="button" onClick={() => setNewTrack({...newTrack, cohort: 'MBA'})} style={{ flex: 1, padding: '10px', background: newTrack.cohort === 'MBA' ? '#2980b9' : '#ecf0f1', color: newTrack.cohort === 'MBA' ? '#fff' : '#333', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>MBA</button>
+              </div>
+
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '5px' }}>Roll Number Suffix / ID:</label>
+              <input type="text" placeholder="e.g. 9 (for IPM) or 60 (for MBA)" value={newTrack.shortId} style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewTrack({...newTrack, shortId: e.target.value})} onKeyDown={(e) => e.key === 'Enter' && markAttendance(e)} />
+              
               <button onClick={markAttendance} style={{ width: '100%', padding: '12px', background: '#3498db', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Mark Present</button>
             </div>
           </aside>
