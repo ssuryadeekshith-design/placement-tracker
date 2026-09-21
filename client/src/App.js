@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, Calendar, CheckCircle, AlertCircle, TrendingUp, Lock, ArrowLeft } from 'lucide-react';
+import { Calendar, CheckCircle, TrendingUp, Lock, ArrowLeft } from 'lucide-react';
 
 const API = "https://placement-tracker-lyjf.onrender.com/api";
 
