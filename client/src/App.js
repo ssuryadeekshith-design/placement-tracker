@@ -137,7 +137,7 @@ function App() {
             </button>
           ) : (
             <button onClick={triggerAdminLogin} style={{ padding: '10px 15px', cursor: 'pointer', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <Lock size={16} /> Committee Admin Login
+              <Lock size={16} /> Admin Login
             </button>
           )}
         </div>
