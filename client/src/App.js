@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Calendar, CheckCircle, TrendingUp, Lock, ArrowLeft } from 'lucide-react';
+import { Users, Calendar, CheckCircle, AlertCircle, TrendingUp, Lock, ArrowLeft } from 'lucide-react';
 
 const API = "https://placement-tracker-lyjf.onrender.com/api";
 
@@ -17,7 +17,7 @@ function App() {
   const [searchRoll, setSearchRoll] = useState("");
   const [loggedInStudent, setLoggedInStudent] = useState(null);
 
-  // Admin Check-in State (Cohort + Short ID)
+  // Admin Check-in State
   const [newTrack, setNewTrack] = useState({ eventId: '', cohort: 'IPM', shortId: '' });
   const [newEvent, setNewEvent] = useState({ title: '', date: '', isMandatory: true });
 
@@ -41,10 +41,28 @@ function App() {
     return percentage.toFixed(1);
   };
 
+  // Smart Student Login: Allows typing full roll number OR just the trailing digits (e.g. "09" or "9")
   const handleStudentLogin = () => {
-    const student = students.find(s => s.rollNumber.toLowerCase() === searchRoll.toLowerCase());
-    if (student) { setLoggedInStudent(student); } 
-    else { alert("Roll Number not found in the placement database!"); }
+    const cleanInput = searchRoll.trim().toLowerCase();
+    if (!cleanInput) {
+      alert("Please enter a roll number or ID.");
+      return;
+    }
+
+    const matchedStudents = students.filter(s => {
+      const roll = s.rollNumber.toLowerCase();
+      return roll === cleanInput || 
+             roll.endsWith('-' + cleanInput) || 
+             roll.endsWith('-0' + cleanInput);
+    });
+
+    if (matchedStudents.length === 1) {
+      setLoggedInStudent(matchedStudents[0]);
+    } else if (matchedStudents.length > 1) {
+      alert(`Multiple students matched "${cleanInput}". Please type your full Roll Number.`);
+    } else {
+      alert("Roll Number not found in the placement database!");
+    }
   };
 
   const triggerAdminLogin = () => {
@@ -66,7 +84,6 @@ function App() {
 
     const cleanInput = newTrack.shortId.trim();
 
-    // Smart Matcher: Finds the student matching the cohort and trailing number (e.g. 9 matches 2023-5IPM-09)
     const matchedStudent = students.find(s => {
       const rollUpper = s.rollNumber.toUpperCase();
       const matchesGroup = rollUpper.includes(newTrack.cohort);
@@ -130,7 +147,7 @@ function App() {
           <aside>
             <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', marginBottom: '25px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
               <h3 style={{ marginTop: 0 }}><Calendar size={20} /> Create New Event</h3>
-              <input type="text" placeholder="Company Name / Drive Title" style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewEvent({...newEvent, title: e.target.value})} />
+              <input type="text" placeholder="Company Name / Drive Title" autoComplete="off" style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewEvent({...newEvent, title: e.target.value})} />
               <input type="date" style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewEvent({...newEvent, date: e.target.value})} />
               <button onClick={createEvent} style={{ width: '100%', padding: '12px', background: '#2ecc71', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Add Event</button>
             </div>
@@ -142,7 +159,6 @@ function App() {
                 {events.map(ev => <option key={ev.id} value={ev.id}>{ev.title}</option>)}
               </select>
 
-              {/* Cohort Selector (IPM / MBA) */}
               <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '5px' }}>Select Cohort:</label>
               <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
                 <button type="button" onClick={() => setNewTrack({...newTrack, cohort: 'IPM'})} style={{ flex: 1, padding: '10px', background: newTrack.cohort === 'IPM' ? '#2980b9' : '#ecf0f1', color: newTrack.cohort === 'IPM' ? '#fff' : '#333', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>IPM</button>
@@ -150,7 +166,7 @@ function App() {
               </div>
 
               <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '5px' }}>Roll Number Suffix / ID:</label>
-              <input type="text" placeholder="e.g. 9 (for IPM) or 60 (for MBA)" value={newTrack.shortId} style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewTrack({...newTrack, shortId: e.target.value})} onKeyDown={(e) => e.key === 'Enter' && markAttendance(e)} />
+              <input type="text" placeholder="e.g. 9 or 60" autoComplete="off" value={newTrack.shortId} style={{ width: '100%', marginBottom: '12px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }} onChange={(e) => setNewTrack({...newTrack, shortId: e.target.value})} onKeyDown={(e) => e.key === 'Enter' && markAttendance(e)} />
               
               <button onClick={markAttendance} style={{ width: '100%', padding: '12px', background: '#3498db', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Mark Present</button>
             </div>
@@ -193,9 +209,9 @@ function App() {
             <div style={{ background: '#fff', padding: '50px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
               <TrendingUp size={50} color="#3498db" />
               <h2>Student Portal</h2>
-              <p>Enter your unique Roll Number to check your personal placement attendance metrics.</p>
+              <p>Enter your Roll Number or last digits (e.g. 9 or 60) to check your attendance.</p>
               <div style={{ marginTop: '20px' }}>
-                <input type="text" placeholder="Enter Roll Number (e.g., 2024...)" style={{ padding: '15px', width: '280px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px' }} value={searchRoll} onChange={(e)=>setSearchRoll(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleStudentLogin()} />
+                <input type="text" placeholder="e.g., 2023-5IPM-09 or just 9" autoComplete="off" style={{ padding: '15px', width: '300px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px' }} value={searchRoll} onChange={(e)=>setSearchRoll(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleStudentLogin()} />
                 <button onClick={handleStudentLogin} style={{ padding: '15px 25px', marginLeft: '10px', background: '#3498db', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Check Attendance</button>
               </div>
             </div>
