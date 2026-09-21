@@ -70,7 +70,7 @@ function App() {
     <div style={{ fontFamily: 'Inter, system-ui, sans-serif', padding: '20px', backgroundColor: '#f0f2f5', minHeight: '100vh' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', background: '#1a365d', padding: '20px', borderRadius: '12px', color: '#fff' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '24px' }}>UniPlace Attendance Tracker</h1>
+          <h1 style={{ margin: 0, fontSize: '24px' }}>TPAC</h1>
           <p style={{ margin: 0, opacity: 0.8 }}>University Placement Committee</p>
         </div>
         <div style={{ background: 'rgba(255,255,255,0.1)', padding: '5px', borderRadius: '8px' }}>
