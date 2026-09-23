@@ -12,8 +12,9 @@ function App() {
   const [events, setEvents] = useState([]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [mandatoryEventCount, setMandatoryEventCount] = useState(0);
+  const [loading, setLoading] = useState(true); // Added loading state for Render server wake-up
   
-  // Student Portal State (Cohort + Suffix search)
+  // Student Portal State
   const [studentCohort, setStudentCohort] = useState('IPM');
   const [searchRoll, setSearchRoll] = useState("");
   const [loggedInStudent, setLoggedInStudent] = useState(null);
@@ -26,6 +27,7 @@ function App() {
 
   const fetchData = async () => {
     try {
+      setLoading(true);
       const resStudents = await axios.get(`${API}/students`);
       const resEvents = await axios.get(`${API}/events`);
       const resAttendance = await axios.get(`${API}/attendance-summary`);
@@ -33,7 +35,11 @@ function App() {
       setEvents(resEvents.data);
       setAttendanceLogs(resAttendance.data.logs);
       setMandatoryEventCount(resAttendance.data.mandatoryCount);
-    } catch (e) { console.error("Fetch error", e); }
+    } catch (e) { 
+      console.error("Fetch error", e); 
+    } finally {
+      setLoading(false);
+    }
   };
 
   const calculateAttendance = (rollNumber) => {
@@ -42,7 +48,7 @@ function App() {
     return percentage.toFixed(1);
   };
 
-  // Smart Student Login: Uses Cohort + Suffix (e.g. IPM + 9 matches 2023-5IPM-09)
+  // Smart Student Login with automatic 0-padding (e.g. "9" matches "09")
   const handleStudentLogin = () => {
     const cleanInput = searchRoll.trim();
     if (!cleanInput) {
@@ -50,11 +56,13 @@ function App() {
       return;
     }
 
+    const paddedInput = cleanInput.padStart(2, '0');
+
     const matchedStudent = students.find(s => {
       const rollUpper = s.rollNumber.toUpperCase();
       const matchesGroup = rollUpper.includes(studentCohort);
       const matchesSuffix = rollUpper.endsWith('-' + cleanInput) || 
-                            rollUpper.endsWith('-0' + cleanInput) ||
+                            rollUpper.endsWith('-' + paddedInput) ||
                             rollUpper === cleanInput;
       return matchesGroup && matchesSuffix;
     });
@@ -84,12 +92,13 @@ function App() {
     }
 
     const cleanInput = newTrack.shortId.trim();
+    const paddedInput = cleanInput.padStart(2, '0');
 
     const matchedStudent = students.find(s => {
       const rollUpper = s.rollNumber.toUpperCase();
       const matchesGroup = rollUpper.includes(newTrack.cohort);
       const matchesSuffix = rollUpper.endsWith('-' + cleanInput) || 
-                            rollUpper.endsWith('-0' + cleanInput) ||
+                            rollUpper.endsWith('-' + paddedInput) ||
                             rollUpper === cleanInput;
       return matchesGroup && matchesSuffix;
     });
@@ -205,8 +214,13 @@ function App() {
           </main>
         </div>
       ) : (
-        <div style={{ maxWidth: loggedInStudent ? '700px' : '450px', margin: '0 auto', transition: 'max-width 0.3s ease' }}>
-          {!loggedInStudent ? (
+        <div style={{ maxWidth: '450px', margin: '0 auto' }}>
+          {loading ? (
+            <div style={{ background: '#fff', padding: '40px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+              <p style={{ fontSize: '16px', color: '#555', fontWeight: 'bold' }}>⏳ Connecting to database...</p>
+              <p style={{ fontSize: '13px', color: '#888' }}>(First load may take up to 30 seconds while the server wakes up)</p>
+            </div>
+          ) : !loggedInStudent ? (
             <div style={{ background: '#fff', padding: '40px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
               <TrendingUp size={40} color="#3498db" style={{ margin: '0 auto 15px auto' }} />
               <h2 style={{ marginTop: 0 }}>Student Portal</h2>
