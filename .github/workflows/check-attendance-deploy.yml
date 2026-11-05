@@ -1,0 +1,32 @@
+name: Verify attendance deployment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'server/config.js'
+      - '.github/workflows/check-attendance-deploy.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for the live API and matching Android association
+        env:
+          RENDER_EXTERNAL_HOSTNAME: placement-tracker-lyjf.onrender.com
+        working-directory: server
+        run: |
+          set -eu
+          base="https://$RENDER_EXTERNAL_HOSTNAME"
+          cert=$(node -p "require('./config').loadConfig().android.fingerprints[0]")
+          for attempt in {1..20}; do
+            if curl -fsS --max-time 15 "$base/api/health" | jq -e '.status == "ok"' &&
+              curl -fsS --max-time 15 "$base/.well-known/assetlinks.json" | jq -e --arg cert "$cert" 'any(.[]; .target.package_name == "in.shikshavertex.attendance" and (.target.sha256_cert_fingerprints | index($cert) != null) and (.relation | index("delegate_permission/common.get_login_creds") != null))'; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
