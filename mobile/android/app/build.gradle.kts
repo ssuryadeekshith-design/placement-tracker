@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-fun config(name: String): String = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).orElse("").get()
+fun config(name: String): String = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).orElse("https://placement-tracker-lyjf.onrender.com/api").get()
 fun literal(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "") + "\""
 
 android {
