@@ -1,0 +1,3 @@
+# Copy to local.properties and set your Android SDK path.
+# This file is ignored and should never contain Firebase Admin private credentials.
+sdk.dir=/absolute/path/to/Android/Sdk

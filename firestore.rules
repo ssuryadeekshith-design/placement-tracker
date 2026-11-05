@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All application data access uses the authenticated Express API/Admin SDK.
+    // Firebase client authentication does not grant direct database access.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

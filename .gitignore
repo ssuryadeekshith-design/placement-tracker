@@ -1,1 +1,10 @@
 server/serviceAccountKey.json
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+**/serviceAccountKey.json
+
+# Installed dependencies (legacy tracked dependency files are left untouched)
+/server/node_modules/
