@@ -1,0 +1,4 @@
+# Public HTTPS backend URL. Firebase comes from app/google-services.json.
+# Supply via ~/.gradle/gradle.properties, a command-line -P flag, or environment.
+# Do not put Admin keys, passwords, cookie secrets or private signing keys here.
+ATTENDANCE_API_URL=https://your-attendance.example.com/api

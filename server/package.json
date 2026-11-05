@@ -2,15 +2,19 @@
   "name": "server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "seed:emails": "node scripts/seed-emails.js",
+    "committee:grant": "node scripts/grant-committee.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@simplewebauthn/server": "^14.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "firebase-admin": "^11.10.1",

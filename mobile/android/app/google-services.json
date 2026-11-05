@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "351047851425",
+    "project_id": "placementtracker-a1a87",
+    "storage_bucket": "placementtracker-a1a87.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:351047851425:android:329997d369bb213f0d7fe0",
+        "android_client_info": {
+          "package_name": "in.shikshavertex.attendance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCM5Xq3DxjkFGjuRDQXcBwrofckI0-lotg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
