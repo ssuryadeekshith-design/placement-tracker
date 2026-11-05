@@ -4,6 +4,10 @@ const { ATTENDANCE_SSID, normalizeIp } = require('./wifi-attendance');
 const VENUE_ADDRESS = '2nd floor, Srivari Arcade, NGR Layout, Roopena Agrahara, Bommanahalli, Bengaluru, Karnataka 560068';
 const MAPS_URL = 'https://maps.app.goo.gl/1t5uN5hefMxJEWKdA';
 
+// Public signing certificate for the attendance APK from Actions run 41976631021.
+const HOSTED_DOMAIN = 'placement-tracker-lyjf.onrender.com';
+const HOSTED_ANDROID_CERT = '00:7B:DE:0F:51:51:01:8D:31:C5:6C:E0:F4:F6:7D:64:31:00:11:17:65:9F:57:BD:C0:4A:62:A3:1F:E7:58:59';
+
 function numeric(value, fallback, min, max, name) {
     if (value === undefined || value === '') return fallback;
     const number = Number(value);
@@ -13,20 +17,21 @@ function numeric(value, fallback, min, max, name) {
 
 function loadConfig(env = process.env) {
     const production = env.NODE_ENV === 'production';
+    const hosted = env.RENDER_EXTERNAL_HOSTNAME === HOSTED_DOMAIN;
     const cookieSecret = env.DEVICE_COOKIE_SECRET || (!production && crypto.randomBytes(32).toString('hex'));
     if (!cookieSecret || cookieSecret.length < 32) throw new Error('DEVICE_COOKIE_SECRET must contain at least 32 characters');
     // Exact pin supplied by the venue owner. Partial overrides must not mix two locations.
     const hasVenueOverride = Boolean(env.VENUE_LATITUDE || env.VENUE_LONGITUDE);
     const latitude = numeric(env.VENUE_LATITUDE, hasVenueOverride ? null : 12.912773610440954, -90, 90, 'VENUE_LATITUDE');
     const longitude = numeric(env.VENUE_LONGITUDE, hasVenueOverride ? null : 77.62322878099566, -180, 180, 'VENUE_LONGITUDE');
-    const fingerprints = (env.ANDROID_SHA256_CERT_FINGERPRINTS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => {
+    const fingerprints = (env.ANDROID_SHA256_CERT_FINGERPRINTS ?? (hosted ? HOSTED_ANDROID_CERT : '')).split(',').map(value => value.trim()).filter(Boolean).map(value => {
         const hex = value.replaceAll(':', '');
         if (!/^[a-fA-F0-9]{64}$/.test(hex)) throw new Error('Invalid ANDROID_SHA256_CERT_FINGERPRINTS');
         return hex.toUpperCase().match(/.{2}/g).join(':');
     });
-    const rpID = env.WEBAUTHN_RP_ID || (!production ? 'localhost' : '');
+    const rpID = env.WEBAUTHN_RP_ID || (hosted ? HOSTED_DOMAIN : (!production ? 'localhost' : ''));
     if (rpID && !/^[A-Za-z0-9.-]+$/.test(rpID)) throw new Error('Invalid WEBAUTHN_RP_ID');
-    const webOrigins = (env.WEBAUTHN_EXPECTED_ORIGINS || (!production ? 'http://localhost:3000,http://localhost:5001' : '')).split(',').map(value => value.trim()).filter(Boolean);
+    const webOrigins = (env.WEBAUTHN_EXPECTED_ORIGINS || (hosted ? `https://${HOSTED_DOMAIN}` : (!production ? 'http://localhost:3000,http://localhost:5001' : ''))).split(',').map(value => value.trim()).filter(Boolean);
     for (const origin of webOrigins) {
         const url = new URL(origin);
         if (url.origin !== origin || (url.protocol !== 'https:' && !(url.protocol === 'http:' && url.hostname === 'localhost' && !production)) ||
