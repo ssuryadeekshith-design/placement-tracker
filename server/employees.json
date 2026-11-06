@@ -1,0 +1,514 @@
+[
+  {
+    "employeeId": "SV001",
+    "fullName": "Arockia Joe Arnold",
+    "designation": "Manager - Inside Sales",
+    "department": "Inside Sales",
+    "team": "Hogwarts",
+    "email": null
+  },
+  {
+    "employeeId": "SV002",
+    "fullName": "Roshini Ravi",
+    "designation": "Cluster Manager - Helleavens",
+    "department": "Inside Sales",
+    "team": "Helleavens",
+    "email": null
+  },
+  {
+    "employeeId": "SV003",
+    "fullName": "Adhithyan A",
+    "designation": "Inside Sales Executive",
+    "department": "Inside Sales",
+    "team": "Helleavens",
+    "email": null
+  },
+  {
+    "employeeId": "SV004",
+    "fullName": "Bhavan Kalyan",
+    "designation": "Inside Sales Representative (P) - 5 Days OJT",
+    "department": "Inside Sales",
+    "team": "Helleavens",
+    "email": null
+  },
+  {
+    "employeeId": "SV005",
+    "fullName": "Arjun M",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Inside Sales",
+    "team": "Helleavens",
+    "email": null
+  },
+  {
+    "employeeId": "SV006",
+    "fullName": "Prasanth Prasad",
+    "designation": "Manager - Inside Sales",
+    "department": "Inside Sales",
+    "team": "Spyro",
+    "email": null
+  },
+  {
+    "employeeId": "SV007",
+    "fullName": "Chandhuru S",
+    "designation": "BDA",
+    "department": "Inside Sales",
+    "team": "Spectre",
+    "email": null
+  },
+  {
+    "employeeId": "SV008",
+    "fullName": "Ridley Jerome R",
+    "designation": "BDE",
+    "department": "Inside Sales",
+    "team": "Spectre",
+    "email": null
+  },
+  {
+    "employeeId": "SV009",
+    "fullName": "Sadha Sivan RB",
+    "designation": "ATL - Maniac",
+    "department": "Inside Sales",
+    "team": "Maniac",
+    "email": null
+  },
+  {
+    "employeeId": "SV010",
+    "fullName": "Shajith",
+    "designation": "Inside Sales Executive",
+    "department": "Inside Sales",
+    "team": "Maniac",
+    "email": null
+  },
+  {
+    "employeeId": "SV011",
+    "fullName": "Shivani Laxmi",
+    "designation": "ATL - Starks",
+    "department": "Inside Sales",
+    "team": "Starks",
+    "email": null
+  },
+  {
+    "employeeId": "SV012",
+    "fullName": "Akalya R",
+    "designation": "Inside Sales Executive",
+    "department": "Inside Sales",
+    "team": "Starks",
+    "email": null
+  },
+  {
+    "employeeId": "SV013",
+    "fullName": "Sharbin C",
+    "designation": "Team Leader - Madrid",
+    "department": "Inside Sales",
+    "team": "Mardrid",
+    "email": null
+  },
+  {
+    "employeeId": "SV014",
+    "fullName": "Dhena S",
+    "designation": "Inside Sales Executive",
+    "department": "Inside Sales",
+    "team": "Madrid",
+    "email": null
+  },
+  {
+    "employeeId": "SV015",
+    "fullName": "Satyam Patel",
+    "designation": "Acting Team Lead - Inside Sales",
+    "department": "Inside Sales",
+    "team": "Madrid",
+    "email": null
+  },
+  {
+    "employeeId": "SV016",
+    "fullName": "Om Ingole",
+    "designation": "Inside Sales Representative (P) - No OJT",
+    "department": "Inside Sales",
+    "team": "Madrid",
+    "email": null
+  },
+  {
+    "employeeId": "SV017",
+    "fullName": "Prakash R",
+    "designation": "Team Leader - Walter",
+    "department": "Inside Sales",
+    "team": "Walter",
+    "email": null
+  },
+  {
+    "employeeId": "SV018",
+    "fullName": "Priyadharsini K",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Inside Sales",
+    "team": "Walter",
+    "email": null
+  },
+  {
+    "employeeId": "SV019",
+    "fullName": "Mottayasamy S",
+    "designation": "Inside Sales Executive",
+    "department": "Inside Sales",
+    "team": "Walter",
+    "email": null
+  },
+  {
+    "employeeId": "SV020",
+    "fullName": "Mariya Vibija D",
+    "designation": "Inside Sales Executive",
+    "department": "Inside Sales",
+    "team": "Walter",
+    "email": null
+  },
+  {
+    "employeeId": "SV021",
+    "fullName": "Hemanth Sai",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Inside Sales",
+    "team": "Walter",
+    "email": null
+  },
+  {
+    "employeeId": "SV022",
+    "fullName": "Nickhil M S",
+    "designation": "Bops - Team Leader",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV023",
+    "fullName": "Mithuna Sree M",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV024",
+    "fullName": "Madhumitha Mondal P",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV025",
+    "fullName": "Prashant Pandey",
+    "designation": "Inside Sales Representative (P) - No OJT",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV026",
+    "fullName": "Dilshath Banu S",
+    "designation": "Manager - Campus Operations",
+    "department": "Campus Operations",
+    "team": "Campus Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV027",
+    "fullName": "Runku Dilleswara Rao",
+    "designation": "Team Coordinator - Lead Generation",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV028",
+    "fullName": "Thirumaleswari Namburi",
+    "designation": "Marketing Executive",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV029",
+    "fullName": "Vikas.A.H",
+    "designation": "Team Coordinator - Lead Generation",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV030",
+    "fullName": "Sunil Raja R",
+    "designation": "ISR(P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV031",
+    "fullName": "Katta Vamsi",
+    "designation": "Marketing Executive (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV032",
+    "fullName": "Karuna Gupta",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV033",
+    "fullName": "Balaji P",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV034",
+    "fullName": "Anirban Ghosh",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV035",
+    "fullName": "Sri Harshini R",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV036",
+    "fullName": "Madeshwari M",
+    "designation": "Acting Team Lead - Marketiing ( Lead Generation )",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV037",
+    "fullName": "kodi Aparna",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV038",
+    "fullName": "Monisha",
+    "designation": "Marketing Executive",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV039",
+    "fullName": "Mohamed Anfaz",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV040",
+    "fullName": "Mukilan Murugesan",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV041",
+    "fullName": "Kowshik N",
+    "designation": "HR - Team Lead",
+    "department": "Human Resources",
+    "team": "Human Resources",
+    "email": null
+  },
+  {
+    "employeeId": "SV042",
+    "fullName": "Akshayadevi A",
+    "designation": "Talent Acquisition Executive (P)",
+    "department": "Human Resource",
+    "team": "Human Resource",
+    "email": null
+  },
+  {
+    "employeeId": "SV043",
+    "fullName": "Koushik SM",
+    "designation": "Talent Acquisition Executive (P)",
+    "department": "Humand Resources",
+    "team": "Humand Resources",
+    "email": null
+  },
+  {
+    "employeeId": "SV044",
+    "fullName": "Anjali Mandal",
+    "designation": "Operations Executive",
+    "department": "Operations",
+    "team": "Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV045",
+    "fullName": "Aduvala Pavan",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV046",
+    "fullName": "Gujjeti Vyshnav",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Inside Sales",
+    "team": "Madrid",
+    "email": null
+  },
+  {
+    "employeeId": "SV047",
+    "fullName": "Kandhavarapu Venkatesh",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV048",
+    "fullName": "Vinithkumar B",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Campus Operations",
+    "team": "Campus Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV049",
+    "fullName": "Rishi Raj",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Inside Sales",
+    "team": "Madrid",
+    "email": null
+  },
+  {
+    "employeeId": "SV050",
+    "fullName": "Shivani M",
+    "designation": "Marketing Executive (P)",
+    "department": "Marketing ( Lead Generation )",
+    "team": "Mavericks (M)",
+    "email": null
+  },
+  {
+    "employeeId": "SV051",
+    "fullName": "Nitin Verma",
+    "designation": "Inside Sales Internship - 3 Months",
+    "department": "Campus Operations",
+    "team": "Campus Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV052",
+    "fullName": "Ramesh Anusha",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV053",
+    "fullName": "Subalakshmi R",
+    "designation": "Inside Sales Internship - 3 Months",
+    "department": "Campus Operations",
+    "team": "Campus Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV054",
+    "fullName": "Gudapati Suhitha",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV055",
+    "fullName": "Kaarumanchi Mounika",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Helleavens",
+    "team": "Helleavens",
+    "email": null
+  },
+  {
+    "employeeId": "SV056",
+    "fullName": "R. Sai Divya",
+    "designation": "Inside Sales Representative (P)",
+    "department": "Helleavens",
+    "team": "Helleavens",
+    "email": null
+  },
+  {
+    "employeeId": "SV057",
+    "fullName": "Chinni Bhargavi Bhavitha",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Inside Sales",
+    "team": "Inside Sales",
+    "email": null
+  },
+  {
+    "employeeId": "SV058",
+    "fullName": "Kurucheti L V S Sudha Manaswini",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Inside Sales",
+    "team": "Inside Sales",
+    "email": null
+  },
+  {
+    "employeeId": "SV059",
+    "fullName": "Mallidi Pavanendra Reddy",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Inside Sales",
+    "team": "Inside Sales",
+    "email": null
+  },
+  {
+    "employeeId": "SV060",
+    "fullName": "Mukka Jahnavi",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Inside Sales",
+    "team": "Inside Sales",
+    "email": null
+  },
+  {
+    "employeeId": "SV061",
+    "fullName": "Nallamilli Sanjay Reddy",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Campus Operations",
+    "team": "Campus Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV062",
+    "fullName": "Punyatoya Naik",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Inside Sales",
+    "team": "Inside Sales",
+    "email": null
+  },
+  {
+    "employeeId": "SV063",
+    "fullName": "Supriti Mondal",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  },
+  {
+    "employeeId": "SV064",
+    "fullName": "Surya Deekshith Palakurthi",
+    "designation": "Inside Sales Internship - 2 Months",
+    "department": "Business Operations",
+    "team": "Business Operations",
+    "email": null
+  }
+]

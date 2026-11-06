@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('node:crypto');
+const { bootstrapHr } = require('./hr-bootstrap');
+const { registerEmployeeRoutes } = require('./employee-registration');
 const { checkAttendanceWifi } = require('./wifi-attendance');
 const { createVenueAccess } = require('./venue-access');
 const { registerTrackingRoutes } = require('./tracking');
@@ -13,7 +15,7 @@ const eventView = doc => {
     const event = doc.data();
     return { id: doc.id, title: event.title, date: event.date, isMandatory: event.isMandatory !== false, checkInOpen: event.checkInOpen === true };
 };
-const profile = (user, token) => ({ uid: token.uid, email: normalizeEmail(token.email), fullName: user.fullName || '', role: token.committee === true ? 'committee' : 'student' });
+const profile = (user, token) => ({ uid: token.uid, email: normalizeEmail(token.email), fullName: user.fullName || '', role: token.committee === true ? 'committee' : 'student', employeeId: user.employeeId || null, designation: user.designation || '', department: user.department || '', team: user.team || '' });
 const validId = id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
 
 function createApp({ db, auth, config, now = Date.now }) {
@@ -57,8 +59,11 @@ function createApp({ db, auth, config, now = Date.now }) {
         catch { throw new HttpError(401, 'Your session has expired. Please sign in again.'); }
         if (!req.identity.email_verified || !req.identity.email || !validId(req.identity.uid)) throw new HttpError(403, 'Verify your email address before continuing.');
         const email = normalizeEmail(req.identity.email);
+        const bootstrapped = await bootstrapHr({ identity: req.identity, db, auth, config, now });
+        if (bootstrapped && req.identity.committee !== true) { const error = new HttpError(401, 'Refresh your signed session after HR access was granted.'); error.publicCode = 'TOKEN_REFRESH_REQUIRED'; throw error; }
         const approved = snapshotData(await db.collection('AllowedEmails').doc(email).get());
-        if (!approved || approved.enabled !== true || (approved.uid && approved.uid !== req.identity.uid)) throw new HttpError(403, 'This email is not approved for attendance. Contact the committee.');
+        if (!approved) { const error = new HttpError(403, 'HR approval is required before attendance access.'); error.publicCode = 'HR_APPROVAL_REQUIRED'; throw error; }
+        if (approved.enabled !== true || (approved.uid && approved.uid !== req.identity.uid)) throw new HttpError(403, 'This email is not approved for attendance. Contact the committee.');
         req.email = email;
         next();
     });
@@ -91,6 +96,8 @@ function createApp({ db, auth, config, now = Date.now }) {
     });
     registerTrackingRoutes({ app, db, config, now, protectedRoute, committee, asyncRoute, limit, venueAccess: venueAccess.middleware });
     registerBiometricRoutes({ app, db, config, now, protectedRoute: interactiveRoute, asyncRoute, limit });
+
+    registerEmployeeRoutes({ app, db, auth, config, now, interactiveRoute, committee, asyncRoute, limit });
 
     app.get('/api/health', (req, res) => res.json({ status: 'ok', venueConfigured: config.venue.configured }));
     app.get('/api/venue', (req, res) => res.json(config.venue));
@@ -226,7 +233,7 @@ function createApp({ db, auth, config, now = Date.now }) {
         if (res.headersSent) return next(error);
         const status = error instanceof HttpError ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : 503;
         if (status === 503) console.error('Attendance service request failed:', error.code || error.name || 'UnknownError');
-        res.status(status).json({ error: error instanceof HttpError ? error.message : status === 400 ? 'Invalid JSON request.' : status === 413 ? 'Request is too large.' : 'The attendance service is unavailable. Please try again or contact the committee.' });
+        res.status(status).json({ ...(error.publicCode ? { code: error.publicCode } : {}), error: error instanceof HttpError ? error.message : status === 400 ? 'Invalid JSON request.' : status === 413 ? 'Request is too large.' : 'The attendance service is unavailable. Please try again or contact the committee.' });
     });
     return app;
 }

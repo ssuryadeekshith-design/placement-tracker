@@ -4,6 +4,7 @@ const express = require('express');
 const { createApp } = require('./app');
 const { loadConfig } = require('./config');
 const { initializeFirebase } = require('./firebase');
+const { seedEmployees } = require('./scripts/seed-employees');
 const { seedAllowedEmails } = require('./scripts/seed-emails');
 const { finalizeDailyReports } = require('./tracking');
 const { indiaDate } = require('./security');
@@ -12,6 +13,7 @@ async function start() {
     const config = loadConfig();
     const { db, auth } = initializeFirebase();
     await seedAllowedEmails(db);
+    await seedEmployees(db);
     const app = createApp({ db, auth, config });
     // One origin supports secure browser binding cookies and location over HTTPS.
     const build = path.join(__dirname, '../client/build');

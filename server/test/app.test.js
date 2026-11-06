@@ -23,6 +23,9 @@ async function fixture(t, extra = {}, venueOverrides = {}, access = { required: 
   });
   const tokens = {
     alice: { uid: 'alice', email: ALICE, email_verified: true, name: 'Supriti' },
+    hr: { uid: 'hr', email: 'hr@shikshavertex.in', email_verified: true },
+    hire: { uid: 'hire', email: 'new.employee@shikshavertex.in', email_verified: true },
+    hire2: { uid: 'hire2', email: 'second.employee@shikshavertex.in', email_verified: true },
     bob: { uid: 'bob', email: BOB, email_verified: true },
     committee: { uid: 'committee', email: COMMITTEE, email_verified: true, committee: true },
     unverified: { uid: 'alice', email: ALICE, email_verified: false },
@@ -31,8 +34,8 @@ async function fixture(t, extra = {}, venueOverrides = {}, access = { required: 
   const auth = { verifyIdToken: async (token, checkRevoked) => {
     assert.equal(checkRevoked, true, 'revoked authentication tokens must be checked');
     if (!tokens[token]) throw new Error('Invalid authentication token');
-    return tokens[token];
-  } };
+    return structuredClone(tokens[token]);
+  }, getUser: async uid => ({ uid, email: tokens[uid]?.email, emailVerified: true, customClaims: {} }), setCustomUserClaims: async (uid, claims) => { Object.assign(tokens[uid], claims); } };
   const config = {
     cookieSecret: 'a'.repeat(64), production: false, allowedOrigins: [],
     // Legacy route tests isolate geofence/device behavior; biometrics have dedicated tests.
@@ -437,4 +440,71 @@ test('a client-supplied forwarded IP does not bypass an optional venue egress re
   assert.equal((await f.request('/attendance', { cookie, forwardedFor: '203.0.113.42', body })).status, 403);
   f.config.wifi.allowedIps = ['127.0.0.1'];
   assert.equal((await f.request('/attendance', { cookie, body })).status, 200);
+});
+
+
+test('employee requests need verified company email and remain blocked until an HR decision', async t => {
+  const f = await fixture(t);
+  const denied = await f.request('/events', { token: 'hire' });
+  assert.equal(denied.status, 403); assert.equal(denied.data.code, 'HR_APPROVAL_REQUIRED');
+  for (const token of [null, 'unverified', 'unlisted']) {
+    assert.ok([401, 403].includes((await f.request('/registration/request', { token, body: { fullName: 'Employee' } })).status));
+  }
+  const result = await f.request('/registration/request', { token: 'hire', body: { fullName: 'Arockia Joe Arnold', role: 'committee', approved: true } });
+  assert.equal(result.status, 200); assert.equal(result.data.status, 'pending');
+  assert.equal((await f.request('/registration/status', { token: 'hire' })).data.approved, false);
+  assert.equal((await f.request('/session', { token: 'hire', body: {} })).status, 403);
+  assert.equal(f.db.dump()['AllowedEmails/new.employee@shikshavertex.in'], undefined);
+  const member = await f.session();
+  assert.equal((await f.request('/employees', { cookie: member.cookie })).status, 403);
+  assert.equal((await f.request('/registration-requests/hire/approve', { cookie: member.cookie, body: { employeeId: 'SV001' } })).status, 403);
+});
+
+test('HR approval links a roster identity exactly once without granting a job title admin privileges', async t => {
+  const { seedEmployees } = require('../scripts/seed-employees');
+  const f = await fixture(t); await seedEmployees(f.db);
+  await f.request('/registration/request', { token: 'hire', body: { fullName: 'Requested name is not authoritative' } });
+  await f.request('/registration/request', { token: 'hire2', body: { fullName: 'Second employee' } });
+  const admin = await f.session('committee');
+  const directory = await f.request('/employees', { token: 'committee', cookie: admin.cookie });
+  assert.equal(directory.data.length, 64);
+  const approve = body => f.request('/registration-requests/hire/approve', { token: 'committee', cookie: admin.cookie, body });
+  assert.equal((await approve({ employeeId: 'SV999' })).status, 400);
+  assert.equal((await approve({ employeeId: 'SV001' })).status, 200);
+  assert.equal((await approve({ employeeId: 'SV001' })).status, 409);
+  const hire = await f.session('hire');
+  assert.equal(hire.data.user.fullName, 'Arockia Joe Arnold');
+  assert.equal(hire.data.user.designation, 'Manager - Inside Sales');
+  assert.equal(hire.data.user.role, 'student', 'job title must not grant administrator privileges');
+  assert.equal(hire.data.user.employeeId, 'SV001');
+  assert.equal((await f.request('/employees', { token: 'hire', cookie: hire.cookie })).status, 403);
+  const collision = await f.request('/registration-requests/hire2/approve', { token: 'committee', cookie: admin.cookie, body: { employeeId: 'SV001' } });
+  assert.equal(collision.status, 409);
+  const request = f.db.dump()['RegistrationRequests/hire'];
+  assert.equal(request.reviewedBy, 'committee'); assert.equal(request.status, 'approved');
+});
+
+test('rejected or revoked requests cannot approve or re-enable themselves', async t => {
+  const f = await fixture(t); const admin = await f.session('committee');
+  await f.request('/registration/request', { token: 'hire', body: { fullName: 'Employee' } });
+  const reject = await f.request('/registration-requests/hire/reject', { token: 'committee', cookie: admin.cookie, body: { reason: 'Identity could not be confirmed' } });
+  assert.equal(reject.status, 200);
+  const again = await f.request('/registration/request', { token: 'hire', body: { fullName: 'Changed name', status: 'approved' } });
+  assert.equal(again.data.status, 'rejected');
+  assert.equal((await f.request('/registration/status', { token: 'hire' })).data.approved, false);
+  await f.db.collection('AllowedEmails').doc('new.employee@shikshavertex.in').set({ enabled: false, uid: 'hire' });
+  assert.equal((await f.request('/registration/request', { token: 'hire', body: { fullName: 'Employee' } })).status, 403);
+});
+
+
+test('first verified HR mailbox receives a one-time claim and must use a refreshed token', async t => {
+  const f = await fixture(t);
+  f.config.bootstrapHrEmail = 'hr@shikshavertex.in';
+  const initial = await f.request('/session', { token: 'hr', body: {} });
+  assert.equal(initial.status, 401, JSON.stringify(initial.data));
+  assert.equal(initial.data.code, 'TOKEN_REFRESH_REQUIRED');
+  const signed = await f.session('hr');
+  assert.equal(signed.data.user.role, 'committee');
+  assert.equal((await f.request('/employees', { token: 'hr', cookie: signed.cookie })).status, 200);
+  assert.equal(f.db.dump()['System/initial-hr-admin'].uid, 'hr');
 });

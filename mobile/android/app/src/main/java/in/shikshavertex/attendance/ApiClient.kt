@@ -11,7 +11,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
-class ApiException(val status: Int, message: String) : Exception(message)
+class ApiException(val status: Int, message: String, val code: String? = null) : Exception(message)
 
 class ApiClient(context: Context) {
     private val applicationContext = context.applicationContext
@@ -29,7 +29,7 @@ class ApiClient(context: Context) {
     suspend fun json(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = JSONObject(request(path, method, body))
     suspend fun array(path: String): JSONArray = JSONArray(request(path))
 
-    private fun needsVenue(path: String): Boolean = path.substringBefore('?') !in setOf("/session", "/me", "/access/verify", "/access/lock", "/tracking/status", "/tracking/points", "/tracking/stop")
+    private fun needsVenue(path: String): Boolean = path.substringBefore('?') !in setOf("/registration/request", "/registration/status", "/session", "/me", "/access/verify", "/access/lock", "/tracking/status", "/tracking/points", "/tracking/stop")
 
     private suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): String {
         require(path.startsWith('/') && !path.startsWith("//"))
@@ -91,8 +91,9 @@ class ApiClient(context: Context) {
             }
             if (response.first in 200..299) return response.second
             if (response.first == 401 && attempt == 0) continue
-            val message = runCatching { JSONObject(response.second).optString("error") }.getOrDefault("")
-            throw ApiException(response.first, message.ifBlank { "The service is unavailable (${response.first}). Try again." })
+            val details = runCatching { JSONObject(response.second) }.getOrNull()
+            val message = details?.optString("error") ?: ""
+            throw ApiException(response.first, message.ifBlank { "The service is unavailable (${response.first}). Try again." }, details?.optString("code"))
         }
         throw ApiException(401, "Your session has expired. Sign in again.")
     }

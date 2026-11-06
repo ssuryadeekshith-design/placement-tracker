@@ -47,8 +47,11 @@ function loadConfig(env = process.env) {
         if (!normalized) throw new Error('Invalid WIFI_ATTENDANCE_ALLOWED_IPS');
         return normalized;
     });
+    const bootstrapHrEmail = (env.HR_ADMIN_EMAIL ?? 'hr@shikshavertex.in').trim().toLowerCase();
+    if (bootstrapHrEmail && !/^[^\s/@]+@shikshavertex\.in$/.test(bootstrapHrEmail)) throw new Error('Invalid HR_ADMIN_EMAIL');
     return {
         production,
+        bootstrapHrEmail,
         wifi: { required: true, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
         access: { required: true, leaseSeconds: 30, maxLocationAgeMs: 15000 },
         biometrics: {

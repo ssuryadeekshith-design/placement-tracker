@@ -173,7 +173,7 @@ class MainActivity : FragmentActivity() {
     private fun renderLogin() {
         if (!venueUnlocked) return
         layout()
-        text("Use your approved email. Verify ownership before registering this app or marking attendance.")
+        text("Use your Shiksha Vertex work email. Verify ownership, then request HR approval before marking attendance.")
         val binding = getSharedPreferences("browser_binding", MODE_PRIVATE).getString("bound_email", null)
         if (binding != null) text("This app profile was first registered to $binding. Signing out keeps its binding. Clearing app data or reinstalling resets this profile; it is not a permanent physical-phone identifier.", 13f)
         val email = input("Email address").apply { inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS; setText(binding ?: "") }
@@ -210,10 +210,39 @@ class MainActivity : FragmentActivity() {
         if (!venueUnlocked) return
         // reload() updates the profile; force-refresh the signed email_verified claim as well.
         auth.currentUser?.getIdToken(true)?.await()
-        session = api.json("/session", "POST", JSONObject())
+        try {
+            session = api.json("/session", "POST", JSONObject())
+        } catch (error: ApiException) {
+            if (error.code != "HR_APPROVAL_REQUIRED") throw error
+            val status = api.json("/registration/status")
+            if (!status.optBoolean("approved")) { renderEmployeeApproval(status); return }
+            // HR bootstrap/approval changes signed claims, so refresh before use.
+            auth.currentUser?.getIdToken(true)?.await()
+            session = api.json("/session", "POST", JSONObject())
+        }
         val email = session?.optJSONObject("user")?.optString("email") ?: ""
         getSharedPreferences("browser_binding", MODE_PRIVATE).edit().putString("bound_email", email).apply()
         renderDashboard()
+    }
+    private fun renderEmployeeApproval(status: JSONObject) {
+        if (!venueUnlocked) return
+        layout(); heading("Employee access approval")
+        text(auth.currentUser?.email ?: "Verified work email")
+        text("Use your verified @shikshavertex.in email. HR must approve your identity before you can mark attendance.")
+        when (status.optString("status")) {
+            "pending" -> text("Your request is pending HR approval. Attendance access is not yet available.")
+            "rejected" -> text("Request rejected: ${status.optString("reason")}. Contact HR for review.")
+            "access-unavailable" -> text("Your account requires HR recovery. A new registration cannot restore revoked access.")
+            else -> {
+                val name = input("Full employee name")
+                button("Request HR approval") { runAction {
+                    api.json("/registration/request", "POST", JSONObject().put("fullName", name.text.toString().trim()))
+                    renderEmployeeApproval(api.json("/registration/status"))
+                } }
+            }
+        }
+        button("Check approval status") { runAction { establishSession() } }
+        button("Sign out") { auth.signOut(); session = null; renderLogin() }
     }
     private suspend fun renderDashboard() {
         if (!venueUnlocked) return
@@ -223,10 +252,16 @@ class MainActivity : FragmentActivity() {
         biometricConfigured = biometric.optBoolean("configured")
         val events = (0 until eventsResponse.length()).map { eventsResponse.getJSONObject(it) }.filter { it.optBoolean("checkInOpen") }
         layout()
-        text(session?.optJSONObject("user")?.optString("email") ?: "Signed in")
+        val employee = session?.optJSONObject("user")
+        if (!employee?.optString("fullName").isNullOrBlank()) heading(employee!!.optString("fullName"))
+        text(employee?.optString("email") ?: "Signed in")
+        if (!employee?.optString("department").isNullOrBlank()) text("${employee!!.optString("department")} · ${employee.optString("team")}", 14f)
         val venue = session?.optJSONObject("venue")
         text(venue?.optString("address") ?: "2nd floor, Srivari Arcade, Bengaluru")
         button("View venue on Maps") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) }
+        if (employee?.optString("role") == "committee") button("Review employee approval requests") { runAction {
+            showEmployeeRequests(api.array("/registration-requests"), api.array("/employees"))
+        } }
         heading("Required attendance Wi-Fi")
         text("Connect to ${WifiRule.REQUIRED_SSID} before marking attendance. The app checks the connected network immediately before submission. It does not save or enter the Wi-Fi password.", 14f)
         button("Open Android Wi-Fi settings") { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) }
@@ -299,6 +334,38 @@ class MainActivity : FragmentActivity() {
         text("Location sampling is approximately once a minute, not exact continuous observation. Force-stop, battery restrictions, no network, disabled GPS or revoked permissions cause gaps. The app does not auto-start at boot or secretly restart tracking.", 13f)
     }
 
+    private fun showEmployeeRequests(requests: org.json.JSONArray, employees: org.json.JSONArray) {
+        if (!venueUnlocked) return
+        if (requests.length() == 0) { showMessage("There are no pending employee requests."); return }
+        val labels = (0 until requests.length()).map { index ->
+            val item = requests.getJSONObject(index); "${item.optString("fullName")} — ${item.optString("email") }"
+        }.toTypedArray()
+        reportDialog = AlertDialog.Builder(this).setTitle("Pending employee requests").setItems(labels) { _, index ->
+            if (!venueUnlocked) return@setItems
+            val request = requests.getJSONObject(index)
+            val choices = (0 until employees.length()).map { employees.getJSONObject(it) }.filter {
+                it.optBoolean("active") && (it.isNull("uid") || !it.has("uid") || it.optString("uid") == request.optString("uid"))
+            }
+            val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(10), dp(20), dp(10)) }
+            body.addView(TextView(this).apply { text = "${request.optString("fullName")}\n${request.optString("email")}\nConfirm the employee identity before approving. A job title does not grant HR privileges." })
+            val picker = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("Select matching employee") + choices.map { "${it.optString("fullName")} · ${it.optString("department")}" }) }
+            body.addView(picker)
+            val reason = EditText(this).apply { hint = "Reason if rejecting (at least 5 characters)" }; body.addView(reason)
+            reportDialog = AlertDialog.Builder(this).setTitle("HR identity review").setView(body)
+                .setPositiveButton("Approve") { _, _ ->
+                    val selected = picker.selectedItemPosition - 1
+                    if (selected !in choices.indices) { showMessage("Select a matching employee, then reopen the request."); return@setPositiveButton }
+                    runAction {
+                        api.json("/registration-requests/${request.getString("id")}/approve", "POST", JSONObject().put("employeeId", choices[selected].getString("employeeId")))
+                        showMessage("Employee approved. They can refresh approval status and sign in.")
+                    }
+                }.setNeutralButton("Reject") { _, _ -> runAction {
+                    api.json("/registration-requests/${request.getString("id")}/reject", "POST", JSONObject().put("reason", reason.text.toString()))
+                    showMessage("Request rejected. No attendance access was granted.")
+                } }.setNegativeButton("Cancel", null).show()
+        }.setNegativeButton("Close", null).show()
+    }
     private suspend fun enrollPasskey() {
         if (!venueUnlocked) return
         val options = api.json("/biometrics/registration/options", "POST", JSONObject())
