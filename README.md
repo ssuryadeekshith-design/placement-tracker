@@ -12,6 +12,12 @@ The locked shell retains location permission/retry, venue Maps, stop-sharing and
 
 There is no installed indoor equipment, as confirmed by the owner. The 100 m fence cannot identify the second floor. The supplied research informed the separation of positioning/access/tracking, freshness and uncertainty checks, and native execution. BLE/RTT/UWB and calibrated pressure-based floor evidence are not enabled without real infrastructure and a site survey. See [research application and lock details](docs/venue-access.md).
 
+## Employee directory and HR approval
+
+The provided 64 Shiksha Vertex employee profiles are included with their names, designations, departments and teams. Newly verified company-email accounts request HR approval; an administrator links the request to a specific employee before attendance access is granted. The original eight approved accounts remain approved. No emails are guessed from names and no managerial title grants app permissions.
+
+The owner selected `hr@shikshavertex.in` as the initial HR administrator, provisioned once after verified ownership. Android and web HR controls support approval/rejection and a private directory. Startup safely seeds missing employee records without overwriting HR changes. See [onboarding, bootstrap, signing and rollout](docs/employee-approval.md).
+
 ## Required attendance Wi-Fi
 
 Attendance now also requires the native Android phone's active connection to **Shikshavertex_5G**. Members connect through Android Wi-Fi settings; the app does not store the password. It checks the connected SSID before submission and binds the attendance HTTP request to that Wi-Fi network, so a disconnect cannot silently fall back to mobile data. Unavailable/redacted names, another network or stale observations are rejected. Browsers cannot observe SSIDs, so browser attendance and browser overrides are unavailable while this rule is active; use the Android app.

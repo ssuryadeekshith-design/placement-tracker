@@ -7,6 +7,10 @@ on:
       - '.github/workflows/build-attendance-apk.yml'
       - 'mobile/android/**'
 
+concurrency:
+  group: attendance-debug-build
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -19,16 +23,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Reuse the development signing identity across builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: attendance-debug-signing-v1
       - name: Build and test Android app
         working-directory: mobile/android
         run: bash gradlew :app:assembleDebug :app:testDebugUnitTest
       - name: Verify APK signature
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs mobile/android/app/build/outputs/apk/debug/app-debug.apk | tee certificate.txt
+          awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print "ANDROID_SHA256_CERT_FINGERPRINTS=" toupper($2)}' certificate.txt > render-passkeys.env
+          test -s render-passkeys.env
       - uses: actions/upload-artifact@v4
         with:
           name: attendance-android
           path: |
             mobile/android/app/build/outputs/apk/debug/app-debug.apk
             certificate.txt
+            render-passkeys.env
           if-no-files-found: error

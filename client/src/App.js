@@ -8,6 +8,7 @@ import { auth, firebaseConfigured } from './firebase';
 import api from './api';
 import PhoneVerification, { useAttendanceVerification } from './PhoneVerification';
 import DailyReport from './DailyReport';
+import { EmployeeApplication, EmployeeAdministration } from './EmployeeRegistration';
 import './App.css';
 import VenueGate from './VenueGate';
 
@@ -192,6 +193,7 @@ function History({ logs, events, committee = false }) {
 }
 
 function AccountApp() {
+  const [approvalRequired, setApprovalRequired] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [session, setSession] = useState(null);
   const [events, setEvents] = useState([]);
@@ -213,17 +215,25 @@ function AccountApp() {
   }, []);
   const establishSession = useCallback(async (user) => {
     const current = ++sequence.current;
-    setFirebaseUser(user); setSession(null); setEvents([]); setSummary({ logs: [], mandatoryCount: 0 });
+    setApprovalRequired(false); setFirebaseUser(user); setSession(null); setEvents([]); setSummary({ logs: [], mandatoryCount: 0 });
     if (!user?.emailVerified) { setLoading(false); return; }
     setLoading(true); setError('');
     try {
       await user.getIdToken(true);
-      const { data } = await api.post('/session');
+      let response;
+      try { response = await api.post('/session'); } catch (failure) {
+        if (failure.response?.data?.code !== 'TOKEN_REFRESH_REQUIRED') throw failure;
+        await user.getIdToken(true); response = await api.post('/session');
+      }
+      const { data } = response;
       if (current !== sequence.current) return;
       rememberEmail(data.user.email); setBoundEmail(data.user.email);
       setSession(data);
       await refresh();
-    } catch (failure) { if (current === sequence.current) setError(messageFor(failure)); }
+    } catch (failure) { if (current === sequence.current) {
+      if (failure.response?.data?.code === 'HR_APPROVAL_REQUIRED') { setApprovalRequired(true); setError(''); }
+      else setError(messageFor(failure));
+    } }
     finally { if (current === sequence.current) setLoading(false); }
   }, [refresh]);
   useEffect(() => {
@@ -266,6 +276,7 @@ function AccountApp() {
     try { await sendPasswordResetEmail(auth, email.trim()); setNotice('If this email has an account, a password reset link has been sent.'); }
     catch (failure) { setError(messageFor(failure)); } finally { setBusy(false); }
   }
+  const retryApprovedSession = useCallback(() => establishSession(firebaseUser), [establishSession, firebaseUser]);
   const committee = session?.user.role === 'committee';
   const ownLogs = committee ? summary.logs.filter(log => log.uid === session?.user.uid) : summary.logs;
   return <div className="app-shell">
@@ -278,7 +289,7 @@ function AccountApp() {
       {notice && <div className="alert success" role="status">{notice}</div>}
       {loading ? <section className="card auth-card" role="status">Loading your attendance portal…</section> : !firebaseConfigured ?
         <section className="card auth-card"><h2>Registration is not available yet</h2><p>The administrator needs to connect Firebase Authentication before anyone can register or sign in.</p><p className="field-help">Firebase web configuration is missing or invalid. See the deployment setup instructions.</p></section> : !firebaseUser ?
-          <div className="auth-layout"><section className="card auth-card"><div className="icon-box"><ShieldCheck size={25} aria-hidden="true" /></div><h2>{authMode === 'register' ? 'Create your account' : 'Sign in to check in'}</h2><p>Use your approved Shiksha Vertex email.</p>
+          <div className="auth-layout"><section className="card auth-card"><div className="icon-box"><ShieldCheck size={25} aria-hidden="true" /></div><h2>{authMode === 'register' ? 'Create your account' : 'Sign in to check in'}</h2><p>Use your Shiksha Vertex work email. New employee accounts need HR approval.</p>
             <div className="tabs" aria-label="Account action"><button type="button" className={authMode === 'signin' ? 'active' : ''} onClick={() => setAuthMode('signin')}>Sign in</button><button type="button" className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}>Register</button></div>
             {boundEmail && <p className="callout">This browser was first registered to <strong>{boundEmail}</strong>. Signing out does not remove that binding.</p>}
             <form onSubmit={authenticate}><label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@shikshavertex.in" required disabled={busy} />
@@ -287,10 +298,12 @@ function AccountApp() {
             </form><button className="text-button" type="button" onClick={resetPassword} disabled={busy || !email.trim()}>Forgot your password?</button>
           </section><aside className="onboarding"><Venue /><h2>A simple, verified check-in</h2><ol><li><strong>Register with your email</strong><span>Verify ownership using the link sent to your inbox.</span></li><li><strong>Use your own browser</strong><span>Your first verified account is bound to this browser profile.</span></li><li><strong>Check in at the venue</strong><span>Share a one-time location reading and enter the room code when required.</span></li></ol><p className="field-help">A website cannot permanently identify a physical device. Clearing browser storage, private browsing, or another browser can bypass a browser binding.</p></aside></div>
           : !firebaseUser.emailVerified ? <section className="card auth-card"><div className="icon-box"><ShieldCheck size={25} aria-hidden="true" /></div><h2>Verify your email</h2><p>Open the verification link sent to <strong>{firebaseUser.email}</strong> before registering this browser or marking attendance.</p><div className="stack"><button className="primary" type="button" onClick={verifyAgain} disabled={busy}>I have verified my email</button><button className="secondary" type="button" onClick={sendVerification} disabled={busy}>Resend verification email</button></div></section>
-            : !session ? <section className="card auth-card"><h2>Account access unavailable</h2><p>Your account could not be registered for attendance. Check the message above or contact the placement committee.</p><button className="secondary" onClick={() => establishSession(firebaseUser)} disabled={busy}>Try again</button></section>
+            : !session && approvalRequired ? <EmployeeApplication email={firebaseUser.email} onApproved={retryApprovedSession} />
+              : !session ? <section className="card auth-card"><h2>Account access unavailable</h2><p>Your account could not be registered for attendance. Check the message above or contact the placement committee.</p><button className="secondary" onClick={() => establishSession(firebaseUser)} disabled={busy}>Try again</button></section>
               : <><Venue venue={session.venue} /><div className="dashboard"><CheckIn events={events} logs={ownLogs} venue={session.venue} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} />
                 <section className="card"><div className="section-heading"><div className="icon-box"><CalendarDays aria-hidden="true" /></div><div><h2>{committee ? 'Recent attendance' : 'Your attendance'}</h2><p>{committee ? 'Committee view' : 'Your recorded event check-ins'}</p></div></div><History logs={ownLogs} events={events} /></section></div>
                 <DailyReport key={session.user.uid} user={session.user} />
+                {committee && <EmployeeAdministration />}
                 {committee && <Committee venue={session.venue} events={events} logs={summary.logs} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} />}
                 <p className="privacy-note"><ShieldCheck size={17} aria-hidden="true" />This browser is registered to {session.user.email}. This website checks location while open to keep venue access unlocked. A check-in saves its own location. Daily movement tracking requires separate consent in the Android app. Signing out keeps the browser binding.</p></>}
     </main><footer>TPAC · Shiksha Vertex Attendance</footer>

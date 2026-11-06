@@ -8,7 +8,7 @@ const api = axios.create({
   timeout: 30000,
 });
 
-const exempt = new Set(['/venue', '/health', '/session', '/me', '/access/verify', '/access/lock', '/tracking/status', '/tracking/points', '/tracking/stop']);
+const exempt = new Set(['/registration/request', '/registration/status', '/venue', '/health', '/session', '/me', '/access/verify', '/access/lock', '/tracking/status', '/tracking/points', '/tracking/stop']);
 const interactive = config => !exempt.has((config.url || '').split('?')[0]);
 
 api.interceptors.request.use(async (config) => {
