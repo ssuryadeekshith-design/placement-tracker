@@ -28,6 +28,10 @@ async function fixture(t, extra = {}, venueOverrides = {}, access = { required: 
     hire: { uid: 'hire', email: 'new.employee@shikshavertex.in', email_verified: true },
     hire2: { uid: 'hire2', email: 'second.employee@shikshavertex.in', email_verified: true },
     bob: { uid: 'bob', email: BOB, email_verified: true },
+    surya: { uid: 'surya', email: 'surya_deekshith@shikshavertex.in', email_verified: true },
+    pallavi: { uid: 'pallavi', email: 'hr_pallavi@shikshavertex.in', email_verified: true },
+    recreatedPallavi: { uid: 'replacement', email: 'hr_pallavi@shikshavertex.in', email_verified: true },
+    unverifiedPallavi: { uid: 'pallavi', email: 'hr_pallavi@shikshavertex.in', email_verified: false },
     committee: { uid: 'committee', email: COMMITTEE, email_verified: true, committee: true },
     unverified: { uid: 'alice', email: ALICE, email_verified: false },
     unlisted: { uid: 'unlisted', email: 'unknown@example.org', email_verified: true },
@@ -542,4 +546,90 @@ test('first verified HR mailbox receives a one-time claim and must use a refresh
   assert.equal(signed.data.user.role, 'committee');
   assert.equal((await f.request('/employees', { token: 'hr', cookie: signed.cookie })).status, 200);
   assert.equal(f.db.dump()['System/initial-hr-admin'].uid, 'hr');
+});
+
+test('owner-selected viewers need verified email, retain profile binding, and receive no HR or movement privileges', async t => {
+  const f = await fixture(t, { 'AllowedEmails/surya_deekshith@shikshavertex.in': { enabled: true } });
+  f.config.attendanceViewerEmails = loadConfig({}).attendanceViewerEmails;
+  assert.equal((await f.request('/session', { token: 'unverifiedPallavi', body: {} })).status, 403);
+  assert.equal(f.db.dump()['AttendanceViewers/hr_pallavi@shikshavertex.in'], undefined);
+  const surya = await f.session('surya');
+  assert.equal(surya.data.user.canViewAllAttendance, true);
+  assert.equal(surya.data.user.role, 'student', 'viewer permission must not replace existing employee access');
+  const pallavi = await f.session('pallavi');
+  assert.equal(pallavi.data.user.role, 'attendance-viewer');
+  assert.equal(pallavi.data.user.canViewAllAttendance, true);
+  assert.equal(f.db.dump()['AllowedEmails/hr_pallavi@shikshavertex.in'], undefined, 'viewing must not silently approve employee attendance');
+  const report = '/attendance-report?date=2026-11-04';
+  assert.equal((await f.request(report, { token: 'pallavi', cookie: pallavi.cookie })).status, 200);
+  assert.equal((await f.request(report, { token: 'pallavi', cookie: surya.cookie })).status, 403);
+  assert.equal((await f.request(report, { token: 'pallavi' })).status, 403);
+  for (const token of [null, 'invalid', 'unverifiedPallavi']) assert.ok([401, 403].includes((await f.request(report, { token, cookie: pallavi.cookie })).status));
+  for (const token of ['surya', 'pallavi']) {
+    const cookie = token === 'surya' ? surya.cookie : pallavi.cookie;
+    for (const path of ['/employees', '/registration-requests', '/students', '/tracking/report?date=2026-11-04&uid=alice']) {
+      assert.equal((await f.request(path, { token, cookie })).status, 403, path);
+    }
+    for (const [path, body] of [['/events', { title: 'Forged', date: '2026-11-04' }], ['/attendance/manual', { email: ALICE }], ['/registration-requests/hire/approve', { employeeId: 'SV001' }]]) {
+      assert.equal((await f.request(path, { token, cookie, body })).status, 403, path);
+    }
+  }
+  for (const path of ['/events', '/attendance-summary', '/biometrics', '/tracking/status', '/tracking/report?date=2026-11-04']) {
+    assert.equal((await f.request(path, { token: 'pallavi', cookie: pallavi.cookie })).status, 403, path);
+  }
+  for (const path of ['/attendance', '/tracking/start', '/tracking/points']) {
+    assert.equal((await f.request(path, { token: 'pallavi', cookie: pallavi.cookie, body: { eventId: 'current', consent: true } })).status, 403, path);
+  }
+  const alice = await f.session();
+  assert.equal((await f.request(report, { cookie: alice.cookie })).status, 403);
+  const code = await f.code();
+  assert.equal((await f.request('/attendance', { token: 'surya', cookie: surya.cookie, body: { eventId: 'current', location: f.location(), roomCode: code } })).status, 200, 'existing employee keeps own attendance');
+});
+
+test('viewer grants preserve revocations, UID ownership and existing HR access', async t => {
+  const f = await fixture(t, { 'AllowedEmails/surya_deekshith@shikshavertex.in': { enabled: true } });
+  f.config.attendanceViewerEmails = loadConfig({}).attendanceViewerEmails;
+  f.config.bootstrapHrEmail = 'hr@shikshavertex.in';
+  await f.request('/session', { token: 'hr', body: {} });
+  const hr = await f.session('hr');
+  assert.equal(hr.data.user.role, 'committee'); assert.equal(hr.data.user.canViewAllAttendance, true);
+  assert.equal((await f.request('/employees', { token: 'hr', cookie: hr.cookie })).status, 200);
+  const surya = await f.session('surya');
+  await f.db.collection('AttendanceViewers').doc('surya_deekshith@shikshavertex.in').set({ enabled: false }, { merge: true });
+  assert.equal((await f.request('/attendance-report', { token: 'surya', cookie: surya.cookie })).status, 403);
+  const own = await f.request('/me', { token: 'surya', cookie: surya.cookie });
+  assert.equal(own.status, 200); assert.equal(own.data.user.canViewAllAttendance, false);
+  const pallavi = await f.session('pallavi');
+  assert.equal((await f.request('/session', { token: 'recreatedPallavi', body: {} })).status, 403);
+  await f.db.collection('AttendanceViewers').doc('hr_pallavi@shikshavertex.in').set({ enabled: false }, { merge: true });
+  assert.equal((await f.request('/attendance-report', { token: 'pallavi', cookie: pallavi.cookie })).status, 403);
+  assert.equal(f.db.dump()['AttendanceViewers/hr_pallavi@shikshavertex.in'].enabled, false);
+  await f.db.collection('AllowedEmails').doc('surya_deekshith@shikshavertex.in').set({ enabled: false }, { merge: true });
+  assert.equal((await f.request('/session', { token: 'surya', body: {} })).status, 403);
+});
+
+test('attendance report filters date/session, counts registered accounts, preserves historical logs and omits location/proof data', async t => {
+  const f = await fixture(t, {
+    'AttendanceLogs/current-alice': { uid: 'alice', email: ALICE, eventId: 'current', timestamp: new Date(START).toISOString(), method: 'self', attendanceMode: 'setup', locationVerified: false, location: { latitude: 12.9, longitude: 77.6 }, verification: { credentialId: 'secret-proof' }, deviceId: 'hidden-device' },
+    'AttendanceLogs/past-bob': { uid: 'bob', email: BOB, eventId: 'old', timestamp: '2026-11-03T06:00:00Z', method: 'committee' },
+    'AttendanceLogs/historical': { uid: 'disabled-user', email: 'historical@shikshavertex.in', eventId: 'current', timestamp: new Date(START).toISOString(), method: 'committee' },
+    'AttendanceLogs/legacy': { rollNumber: 'not-attributable', eventId: 'current', timestamp: new Date(START).toISOString() },
+  });
+  await f.session(); await f.session('bob');
+  const admin = await f.session('committee');
+  const get = path => f.request(path, { token: 'committee', cookie: admin.cookie });
+  const report = await get('/attendance-report?date=2026-11-04');
+  assert.equal(report.status, 200, JSON.stringify(report.data));
+  assert.equal(report.data.events.length, 2);
+  assert.equal(report.data.totals.marked, 2);
+  assert.equal(report.data.rows.find(r => r.email === ALICE).status, 'marked');
+  assert.equal(report.data.rows.find(r => r.email === BOB).status, 'not-marked');
+  assert.equal(report.data.rows.find(r => r.email === 'historical@shikshavertex.in').status, 'marked');
+  assert.equal(report.data.rows.some(r => r.email.includes('hr_pallavi')), false);
+  for (const field of ['latitude', 'longitude', 'secret-proof', 'deviceId', 'not-attributable', 'credentialId']) assert.equal(JSON.stringify(report.data).includes(field), false, field);
+  assert.equal((await get('/attendance-report?date=2026-11-04&eventId=closed')).data.totals.marked, 0);
+  assert.equal((await get('/attendance-report?date=2026-11-03')).data.rows.find(r => r.email === BOB).status, 'marked');
+  for (const path of ['/attendance-report?date=2026-11-05', '/attendance-report?date=2026-02-30', '/attendance-report?date=bad', '/attendance-report?date=2026-11-04&eventId=old', '/attendance-report?date=2026-11-04&eventId=../bad', '/attendance-report?date[]=2026-11-04']) {
+    assert.equal((await get(path)).status, 400, path);
+  }
 });

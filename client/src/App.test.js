@@ -270,3 +270,14 @@ test('committee browser overrides cannot bypass required Wi-Fi attendance', asyn
   expect(await screen.findByText(/Browser committee overrides are unavailable/i)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Record committee override' })).not.toBeInTheDocument();
 });
+
+test('a viewer-only account sees attendance reporting without employee or HR controls', async () => {
+  api.post.mockResolvedValue({ data: { user: { uid: 'u1', email: mockUser.email, role: 'attendance-viewer', canViewAllAttendance: true }, venue } });
+  api.get.mockResolvedValue({ data: { date: '2026-11-04', rows: [], events: [], totals: { accounts: 0, marked: 0, notMarked: 0 } } });
+  render(<App />);
+  expect(await screen.findByRole('heading', { name: 'Everyone’s attendance' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Mark your attendance' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Daily location report' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Committee controls' })).not.toBeInTheDocument();
+  expect(api.get.mock.calls.some(([path]) => ['/events', '/attendance-summary', '/biometrics'].includes(path))).toBe(false);
+});

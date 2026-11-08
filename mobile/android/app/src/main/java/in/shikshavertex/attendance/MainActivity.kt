@@ -267,6 +267,14 @@ class MainActivity : FragmentActivity() {
     }
     private suspend fun renderDashboard() {
         if (!venueUnlocked) return
+        val account = session?.optJSONObject("user")
+        if (account?.optString("role") == "attendance-viewer") {
+            layout(); text(account.optString("email")); heading("Attendance viewer")
+            text("Read-only access to everyone's attendance. This account does not have employee or HR management access.")
+            button("View everyone's attendance") { runAction { renderAttendanceReport() } }
+            button("Sign out") { auth.signOut(); session = null; renderLogin() }
+            return
+        }
         val eventsResponse = api.array("/events")
         val biometric = api.json("/biometrics")
         registeredPasskey = biometric.optBoolean("registered")
@@ -277,6 +285,7 @@ class MainActivity : FragmentActivity() {
         val employee = session?.optJSONObject("user")
         if (!employee?.optString("fullName").isNullOrBlank()) heading(employee!!.optString("fullName"))
         text(employee?.optString("email") ?: "Signed in")
+        if (employee?.optBoolean("canViewAllAttendance") == true) button("View everyone's attendance") { runAction { renderAttendanceReport() } }
         if (!employee?.optString("department").isNullOrBlank()) text("${employee!!.optString("department")} · ${employee.optString("team")}", 14f)
         val venue = session?.optJSONObject("venue")
         text(venue?.optString("address") ?: "2nd floor, Srivari Arcade, Bengaluru")
@@ -409,6 +418,67 @@ class MainActivity : FragmentActivity() {
                     showMessage("Request rejected. No attendance access was granted.")
                 } }.setNegativeButton("Cancel", null).show()
         }.setNegativeButton("Close", null).show()
+    }
+    private suspend fun renderAttendanceReport(date: String = Workday.date(), eventId: String = "") {
+        val report = api.json("/attendance-report?date=${Uri.encode(date)}${if (eventId.isNotBlank()) "&eventId=${Uri.encode(eventId)}" else ""}")
+        if (!venueUnlocked) return
+        layout(); heading("Everyone's attendance")
+        text("Read-only records · India time. This view does not disclose movement history or GPS coordinates.", 14f)
+        text("Loaded report: ${report.optString("date")}. Refresh applies date and session changes.", 13f)
+        val dateInput = input("Attendance date (YYYY-MM-DD)").apply { setText(date) }
+        val events = report.getJSONArray("events")
+        val sessions = (0 until events.length()).map { events.getJSONObject(it) }
+        val picker = Spinner(this).apply {
+            contentDescription = "Attendance session"
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("All sessions on this date") + sessions.map { it.optString("title") })
+            setSelection((sessions.indexOfFirst { it.optString("id") == eventId } + 1).coerceAtLeast(0))
+        }
+        content.addView(picker)
+        button("Refresh attendance records") { runAction {
+            val selected = picker.selectedItemPosition - 1
+            val selectedId = if (dateInput.text.toString() == date && selected in sessions.indices) sessions[selected].optString("id") else ""
+            renderAttendanceReport(dateInput.text.toString().trim(), selectedId)
+        } }
+        val totals = report.getJSONObject("totals")
+        text("${totals.optInt("accounts")} accounts · ${totals.optInt("marked")} marked · ${totals.optInt("notMarked")} not marked yet")
+        text("Includes current approved registered accounts and recorded check-ins for this date. Unregistered roster entries are excluded. Not marked yet is not an absence or leave decision. With all sessions selected, any session check-in counts as marked.", 13f)
+        if (sessions.isEmpty()) text("No attendance session exists for this date.")
+        val query = input("Search name, email, department or team")
+        val onlyMarked = CheckBox(this).apply { text = "Show only marked attendance"; content.addView(this) }
+        text("Refresh to retrieve new check-ins. Attendance CSV export is available in the web dashboard.", 13f)
+        button("Back to dashboard") { runAction { renderDashboard() } }
+        val rows = report.getJSONArray("rows")
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; content.addView(this) }
+        val format = DateTimeFormatter.ofPattern("h:mm:ss a").withZone(Workday.zone)
+        fun drawRows() {
+            list.removeAllViews(); var count = 0
+            val search = query.text.toString().lowercase()
+            for (i in 0 until rows.length()) {
+                val row = rows.getJSONObject(i)
+                if (!listOf("name", "email", "department", "team").joinToString(" ") { row.optString(it) }.lowercase().contains(search) || (onlyMarked.isChecked && row.optString("status") != "marked")) continue
+                count++
+                val description = StringBuilder(row.optString("name").ifBlank { row.optString("email") }).append('\n').append(row.optString("email"))
+                    .append("\n${row.optString("department")} · ${row.optString("team")}")
+                    .append(if (row.optString("status") == "marked") "\nMarked" else "\nNot marked yet")
+                val checks = row.getJSONArray("checkIns")
+                for (n in 0 until checks.length()) {
+                    val check = checks.getJSONObject(n)
+                    val time = runCatching { format.format(Instant.parse(check.optString("timestamp"))) }.getOrDefault("Time unavailable")
+                    description.append("\n${check.optString("eventTitle")} · $time")
+                    if (check.optString("attendanceMode") == "setup") description.append("\nSetup check-in · location not verified")
+                    else if (check.optString("method") == "committee") description.append("\nCommittee override")
+                }
+                list.addView(TextView(this).apply { text = description; textSize = 15f; setPadding(0, dp(12), 0, dp(12)) })
+            }
+            if (count == 0) list.addView(TextView(this).apply { text = "No accounts match these filters." })
+        }
+        query.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { drawRows() }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        onlyMarked.setOnCheckedChangeListener { _, _ -> drawRows() }
+        drawRows()
     }
     private suspend fun enrollPasskey() {
         if (!venueUnlocked) return

@@ -2,12 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('node:crypto');
 const { bootstrapHr } = require('./hr-bootstrap');
+const { viewerAccess, attendanceReport } = require('./attendance-viewers');
 const { registerEmployeeRoutes } = require('./employee-registration');
 const { checkAttendanceWifi } = require('./wifi-attendance');
 const { createVenueAccess } = require('./venue-access');
 const { registerTrackingRoutes } = require('./tracking');
 const { registerBiometricRoutes, readAttendanceProof } = require('./biometrics');
-const { HttpError, digest, normalizeEmail, hmac, safeEqual, readDevice, checkLocation, checkEvent } = require('./security');
+const { HttpError, digest, normalizeEmail, hmac, safeEqual, readDevice, checkLocation, checkEvent, indiaDate } = require('./security');
 
 const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 const snapshotData = snapshot => snapshot.exists ? snapshot.data() : null;
@@ -15,7 +16,7 @@ const eventView = doc => {
     const event = doc.data();
     return { id: doc.id, title: event.title, date: event.date, isMandatory: event.isMandatory !== false, checkInOpen: event.checkInOpen === true };
 };
-const profile = (user, token) => ({ uid: token.uid, email: normalizeEmail(token.email), fullName: user.fullName || '', role: token.committee === true ? 'committee' : 'student', employeeId: user.employeeId || null, designation: user.designation || '', department: user.department || '', team: user.team || '' });
+const profile = (user, token, access = {}) => ({ uid: token.uid, email: normalizeEmail(token.email), fullName: user.fullName || '', role: access.viewerOnly ? 'attendance-viewer' : token.committee === true ? 'committee' : 'student', canViewAllAttendance: token.committee === true || access.viewer === true, employeeId: user.employeeId || null, designation: user.designation || '', department: user.department || '', team: user.team || '' });
 const validId = id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
 
 function createApp({ db, auth, config, now = Date.now }) {
@@ -62,8 +63,10 @@ function createApp({ db, auth, config, now = Date.now }) {
         const bootstrapped = await bootstrapHr({ identity: req.identity, db, auth, config, now });
         if (bootstrapped && req.identity.committee !== true) { const error = new HttpError(401, 'Refresh your signed session after HR access was granted.'); error.publicCode = 'TOKEN_REFRESH_REQUIRED'; throw error; }
         const approved = snapshotData(await db.collection('AllowedEmails').doc(email).get());
-        if (!approved) { const error = new HttpError(403, 'HR approval is required before attendance access.'); error.publicCode = 'HR_APPROVAL_REQUIRED'; throw error; }
-        if (approved.enabled !== true || (approved.uid && approved.uid !== req.identity.uid)) throw new HttpError(403, 'This email is not approved for attendance. Contact the committee.');
+        req.viewer = await viewerAccess({ identity: req.identity, db, config, now });
+        if (!approved && !req.viewer) { const error = new HttpError(403, 'HR approval is required before attendance access.'); error.publicCode = 'HR_APPROVAL_REQUIRED'; throw error; }
+        if (approved && (approved.enabled !== true || (approved.uid && approved.uid !== req.identity.uid))) throw new HttpError(403, 'This email is not approved for attendance. Contact the committee.');
+        req.viewerOnly = !approved;
         req.email = email;
         next();
     });
@@ -75,7 +78,7 @@ function createApp({ db, auth, config, now = Date.now }) {
         if (!device || device.uid !== req.identity.uid || device.email !== req.email || !user || user.email !== req.email) {
             throw new HttpError(403, 'This browser is linked to a different email or its binding was revoked. Contact the committee.');
         }
-        req.user = profile(user, req.identity);
+        req.user = profile(user, req.identity, req);
         next();
     });
     function committee(req, res, next) {
@@ -83,9 +86,11 @@ function createApp({ db, auth, config, now = Date.now }) {
         next();
     }
     const protectedRoute = [authenticate, deviceBound];
+    const employeeAccount = (req, res, next) => req.viewerOnly ? next(new HttpError(403, 'This account has read-only attendance access. Employee approval is required for employee features.')) : next();
+    const employeeRoute = [...protectedRoute, employeeAccount];
     const venueAccess = createVenueAccess({ db, config, now, limit });
     venueAccess.register(app, protectedRoute, asyncRoute);
-    const interactiveRoute = [...protectedRoute, venueAccess.middleware];
+    const interactiveRoute = [...employeeRoute, venueAccess.middleware];
 
     app.get('/.well-known/assetlinks.json', (req, res) => {
         const fingerprints = config.android?.fingerprints || [];
@@ -94,7 +99,7 @@ function createApp({ db, auth, config, now = Date.now }) {
             target: { namespace: 'android_app', package_name: config.android.appId, sha256_cert_fingerprints: fingerprints }
         }] : []);
     });
-    registerTrackingRoutes({ app, db, config, now, protectedRoute, committee, asyncRoute, limit, venueAccess: venueAccess.middleware });
+    registerTrackingRoutes({ app, db, config, now, protectedRoute: employeeRoute, committee, asyncRoute, limit, venueAccess: venueAccess.middleware });
     registerBiometricRoutes({ app, db, config, now, protectedRoute: interactiveRoute, asyncRoute, limit });
 
     registerEmployeeRoutes({ app, db, auth, config, now, interactiveRoute, committee, asyncRoute, limit });
@@ -110,26 +115,32 @@ function createApp({ db, auth, config, now = Date.now }) {
         const approvedRef = db.collection('AllowedEmails').doc(req.email);
         let user;
         await db.runTransaction(async transaction => {
-            const [deviceSnap, userSnap, approvedSnap] = await Promise.all([transaction.get(deviceRef), transaction.get(userRef), transaction.get(approvedRef)]);
+            const [deviceSnap, userSnap, approvedSnap, viewerSnap] = await Promise.all([transaction.get(deviceRef), transaction.get(userRef), transaction.get(approvedRef), transaction.get(db.collection('AttendanceViewers').doc(req.email))]);
             const device = snapshotData(deviceSnap);
             const existing = snapshotData(userSnap);
             const approved = snapshotData(approvedSnap);
-            if (!approved || approved.enabled !== true || (approved.uid && approved.uid !== req.identity.uid)) throw new HttpError(403, 'Email registration is unavailable. Contact the committee.');
+            const grant = snapshotData(viewerSnap);
+            if (approved ? approved.enabled !== true || (approved.uid && approved.uid !== req.identity.uid) : !(req.viewer && grant?.enabled === true && grant.uid === req.identity.uid)) throw new HttpError(403, 'Email registration is unavailable. Contact the committee.');
             if (oldToken && !device) throw new HttpError(403, 'This browser binding was revoked. Contact the committee.');
             if (device && (device.email !== req.email || device.uid !== req.identity.uid)) throw new HttpError(403, 'This browser is already linked to a different email. Use its original email.');
             if (existing && existing.email !== req.email) throw new HttpError(403, 'Account email changes require committee help.');
             user = existing || { uid: req.identity.uid, email: req.email, fullName: typeof req.identity.name === 'string' ? req.identity.name.slice(0, 120) : '', createdAt: new Date(now()).toISOString() };
             if (!existing) transaction.create(userRef, user);
             if (!device) transaction.create(deviceRef, { uid: req.identity.uid, email: req.email, createdAt: new Date(now()).toISOString() });
-            transaction.set(approvedRef, { uid: req.identity.uid }, { merge: true });
+            if (approved) transaction.set(approvedRef, { uid: req.identity.uid }, { merge: true });
         });
         // Logout deliberately leaves this cookie in place. It is a browser binding, not an auth session.
         res.cookie('placement_device', `${deviceToken}.${hmac(deviceToken, config.cookieSecret)}`, {
             httpOnly: true, secure: config.production, sameSite: 'lax', maxAge: 365 * 24 * 60 * 60 * 1000, path: '/'
         });
-        res.json({ user: profile(user, req.identity), venue: config.venue });
+        res.json({ user: profile(user, req.identity, req), venue: config.venue });
     }));
     app.get('/api/me', ...protectedRoute, (req, res) => res.json({ user: req.user, venue: config.venue }));
+    app.get('/api/attendance-report', ...protectedRoute, venueAccess.middleware, asyncRoute(async (req, res) => {
+        if (!req.user.canViewAllAttendance) throw new HttpError(403, 'Attendance viewer access is required.');
+        if (Object.keys(req.query).some(key => !['date', 'eventId'].includes(key))) throw new HttpError(400, 'Choose a date and optional attendance session.');
+        res.json(await attendanceReport({ db, date: req.query.date ?? indiaDate(now()), eventId: req.query.eventId, now }));
+    }));
     app.get('/api/students', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
         const snapshot = await db.collection('Users').get();
         res.json(snapshot.docs.map(doc => { const user = doc.data(); return { uid: doc.id, email: user.email, fullName: user.fullName || '' }; }));

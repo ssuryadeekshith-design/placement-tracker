@@ -17,6 +17,8 @@ function numeric(value, fallback, min, max, name) {
 
 function loadConfig(env = process.env) {
     const production = env.NODE_ENV === 'production';
+    const attendanceViewerEmails = (env.ATTENDANCE_VIEWER_EMAILS ?? 'hr@shikshavertex.in,surya_deekshith@shikshavertex.in,hr_pallavi@shikshavertex.in').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+    if (attendanceViewerEmails.some(v => !/^[^\s/@]+@shikshavertex\.in$/.test(v))) throw new Error('Invalid ATTENDANCE_VIEWER_EMAILS');
     const onsiteFlag = (env.ENFORCE_ONSITE_ATTENDANCE || 'false').trim().toLowerCase();
     if (!['true', 'false'].includes(onsiteFlag)) throw new Error('Invalid ENFORCE_ONSITE_ATTENDANCE');
     const onsite = onsiteFlag === 'true';
@@ -54,6 +56,7 @@ function loadConfig(env = process.env) {
     if (bootstrapHrEmail && !/^[^\s/@]+@shikshavertex\.in$/.test(bootstrapHrEmail)) throw new Error('Invalid HR_ADMIN_EMAIL');
     return {
         production,
+        attendanceViewerEmails: [...new Set(attendanceViewerEmails)],
         bootstrapHrEmail,
         wifi: { required: onsite, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
         access: { required: onsite, leaseSeconds: 30, maxLocationAgeMs: 15000 },

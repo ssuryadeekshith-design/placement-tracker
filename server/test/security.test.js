@@ -81,3 +81,9 @@ test('device cookie parser accepts only a complete valid signed token and reject
     assert.throws(() => readDevice({ headers: { cookie: `placement_device=${invalid}` } }, secret), error => error.status === 403);
   }
 });
+
+test('attendance viewers are exactly owner-configured verified work mailboxes and can be disabled', () => {
+  assert.deepEqual(loadConfig({}).attendanceViewerEmails, ['hr@shikshavertex.in', 'surya_deekshith@shikshavertex.in', 'hr_pallavi@shikshavertex.in']);
+  assert.deepEqual(loadConfig({ ATTENDANCE_VIEWER_EMAILS: '' }).attendanceViewerEmails, []);
+  assert.throws(() => loadConfig({ ATTENDANCE_VIEWER_EMAILS: 'someone@example.com' }), /ATTENDANCE_VIEWER_EMAILS/);
+});
