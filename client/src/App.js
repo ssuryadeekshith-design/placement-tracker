@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import AttendanceDashboard from './AttendanceDashboard';
 import {
   createUserWithEmailAndPassword, onAuthStateChanged, reload,
   sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut,
@@ -234,7 +235,7 @@ function AccountApp() {
       if (current !== sequence.current) return;
       rememberEmail(data.user.email); setBoundEmail(data.user.email);
       setSession(data);
-      await refresh();
+      if (data.user.role !== 'attendance-viewer') await refresh();
     } catch (failure) { if (current === sequence.current) {
       if (failure.response?.data?.code === 'HR_APPROVAL_REQUIRED') { setApprovalRequired(true); setError(''); }
       else setError(messageFor(failure));
@@ -305,11 +306,12 @@ function AccountApp() {
           : !firebaseUser.emailVerified ? <section className="card auth-card"><div className="icon-box"><ShieldCheck size={25} aria-hidden="true" /></div><h2>Verify your email</h2><p>Open the verification link sent to <strong>{firebaseUser.email}</strong> before registering this browser or marking attendance.</p><div className="stack"><button className="primary" type="button" onClick={verifyAgain} disabled={busy}>I have verified my email</button><button className="secondary" type="button" onClick={sendVerification} disabled={busy}>Resend verification email</button></div></section>
             : !session && approvalRequired ? <EmployeeApplication email={firebaseUser.email} onApproved={retryApprovedSession} />
               : !session ? <section className="card auth-card"><h2>Account access unavailable</h2><p>Your account could not be registered for attendance. Check the message above or contact the placement committee.</p><button className="secondary" onClick={() => establishSession(firebaseUser)} disabled={busy}>Try again</button></section>
-              : <><Venue venue={session.venue} /><div className="dashboard"><CheckIn events={events} logs={ownLogs} venue={session.venue} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} />
+              : <><Venue venue={session.venue} />{session.user.canViewAllAttendance && <AttendanceDashboard key={session.user.uid} />}{session.user.role !== 'attendance-viewer' && <><div className="dashboard"><CheckIn events={events} logs={ownLogs} venue={session.venue} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} />
                 <section className="card"><div className="section-heading"><div className="icon-box"><CalendarDays aria-hidden="true" /></div><div><h2>{committee ? 'Recent attendance' : 'Your attendance'}</h2><p>{committee ? 'Committee view' : 'Your recorded event check-ins'}</p></div></div><History logs={ownLogs} events={events} /></section></div>
                 <DailyReport key={session.user.uid} user={session.user} />
                 {committee && <EmployeeAdministration />}
                 {committee && <Committee venue={session.venue} events={events} logs={summary.logs} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} />}
+                </>}
                 <p className="privacy-note"><ShieldCheck size={17} aria-hidden="true" />This browser is registered to {session.user.email}. {session.venue?.locationRequired === false ? 'Setup check-ins do not collect or verify your location.' : 'This website checks location while open to keep venue access unlocked. A check-in saves its own location.'} Daily movement tracking requires separate consent in the Android app. Signing out keeps the browser binding.</p></>}
     </main><footer>TPAC · Shiksha Vertex Attendance</footer>
   </div>;

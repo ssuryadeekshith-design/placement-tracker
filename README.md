@@ -1,5 +1,7 @@
 # Shiksha Vertex attendance
 
+The owner-selected attendance viewers are `hr@shikshavertex.in`, `surya_deekshith@shikshavertex.in` and `hr_pallavi@shikshavertex.in`. The first keeps existing HR permissions; the latter two gain read-only attendance viewing without new HR or other-person movement-history rights. See [viewer access, dashboard use and deployment](docs/attendance-viewers.md).
+
 Email-verified attendance with signed phone user verification, a room code, venue proximity and an Android app for explicitly consented daily location reporting.
 
 Venue: **2nd floor, Srivari Arcade, NGR Layout, Roopena Agrahara, Bommanahalli, Bengaluru, Karnataka 560068**. Owner-confirmed pin: **12.912773610440954, 77.62322878099566**. Default radius: 100 m.
