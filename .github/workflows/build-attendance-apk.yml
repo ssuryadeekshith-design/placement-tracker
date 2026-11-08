@@ -50,6 +50,13 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs mobile/android/app/build/outputs/apk/debug/app-debug.apk | tee certificate.txt
           awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print "ANDROID_SHA256_CERT_FINGERPRINTS=" toupper($2)}' certificate.txt > render-passkeys.env
           test -s render-passkeys.env
+          python3 - <<'PY'
+          import pathlib, re
+          # Preserve the identity of the owner's verified version 1.2 APK.
+          expected = 'D72678D6992A09AC549983C370851FCAB3F6635BB3BB727FC6F7DDADFF433D25'
+          match = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+)', pathlib.Path('certificate.txt').read_text())
+          assert match and match.group(1).upper() == expected, 'Signing key changed. Restore the version 1.2 signing keystore before publishing an update; a new key cannot update existing installations.'
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: attendance-android

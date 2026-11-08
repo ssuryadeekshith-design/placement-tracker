@@ -2,6 +2,10 @@
 
 A native Android companion to the same authenticated attendance API. Package name: **`in.shikshavertex.attendance`**. The app implements verified email registration/sign-in, phone passkey enrollment and attendance, explicit daily location sharing through a visible foreground service, and readable daily movement reports.
 
+Version **1.3** allows screenshots of app screens by removing the Activity's `FLAG_SECURE` restriction. Android's own credential/biometric prompts or a device administrator may still restrict capture of their screens.
+
+The APK workflow checks that its certificate matches the owner's uploaded version 1.2 APK (`D72678D6…`). A changed or lost cached signing key now stops artifact publication rather than issuing an incompatible update. Recover the original private keystore from a trusted backup if this check fails; a public certificate cannot recreate it. The development-key cache is not a durable replacement for release key management.
+
 This app is not a hidden tracker. It never starts location tracking at boot, cannot collect before consent, does not restart collection after a process kill, and has a persistent notification with **Stop sharing location**. It requests precise location and notification permissions before starting. The local collector and server accept tracking only **10:30 AM–8:30 PM Asia/Kolkata**; there is no collection before or after that workday window. A user must start each day themselves from the visible app. Force-stop, lost connectivity, Android power management, switched-off GPS or revoked permissions produce gaps. Do not promise uninterrupted tracking on every Android handset.
 
 ## Temporary setup mode

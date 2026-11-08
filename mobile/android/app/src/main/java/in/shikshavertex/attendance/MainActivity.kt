@@ -32,7 +32,6 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
-import android.view.WindowManager
 import kotlinx.coroutines.tasks.await
 import org.json.JSONObject
 import java.time.Instant
@@ -67,7 +66,6 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         venueMonitor = VenueMonitor(this) { allowed, reason ->
             if (allowed && !venueUnlocked) {
                 AttendanceWifi.startObserving(this)
