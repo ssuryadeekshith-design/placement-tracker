@@ -46,6 +46,21 @@ function fillCheckIn() {
   fireEvent.click(screen.getByRole('checkbox', { name: /I agree to share and store my location/ }));
 }
 
+test('setup check-in sends phone verification without requesting GPS or a room code', async () => {
+  mockBiometrics = { required: true, configured: true, registered: true };
+  const setupVenue = { ...venue, attendanceMode: 'setup', accessRequired: false, locationRequired: false, requiresRoomCode: false, attendanceWifi: { required: false } };
+  api.post.mockImplementation(path => Promise.resolve({ data: path === '/session' ? { user: { uid: 'u1', email: mockUser.email, role: 'student' }, venue: setupVenue } : path === '/biometrics/authentication/options' ? { challengeId: 'challenge', options: {} } : path === '/biometrics/authentication/verify' ? { verified: true, proof: 'verified-proof' } : { success: true } }));
+  startAuthentication.mockResolvedValue({ id: 'phone' });
+  await dashboard();
+  expect(screen.queryByLabelText('Room code')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'drive-1' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: /I confirm I am marking my own attendance/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mark attendance', exact: true }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/attendance', { eventId: 'drive-1', biometricProof: 'verified-proof' }));
+  expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
+  expect(startAuthentication).toHaveBeenCalled();
+});
+
 test('shows setup guidance when Firebase is not configured', () => {
   firebaseConfig.firebaseConfigured = false;
   render(<App />);

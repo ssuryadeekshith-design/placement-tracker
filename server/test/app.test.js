@@ -4,6 +4,7 @@ const { once } = require('node:events');
 const { createFakeFirestore } = require('./fake-firestore');
 const { createApp } = require('../app');
 const { loadConfig } = require('../config');
+const { digest, readDevice } = require('../security');
 
 const START = Date.parse('2026-11-04T06:00:00Z');
 const ALICE = 'supriti_m@shikshavertex.in';
@@ -75,6 +76,40 @@ async function fixture(t, extra = {}, venueOverrides = {}, access = { required: 
   const location = overrides => ({ latitude: 12.9, longitude: 77.6, accuracyMeters: 5, capturedAt: clock, ...overrides });
   return { db, request, session, code, location, config, advance: ms => { clock += ms; } };
 }
+
+test('setup check-in needs approved identity and phone proof, ignores physical claims, and preserves the first record', async t => {
+  const f = await fixture(t, {}, { attendanceMode: 'setup', accessRequired: false, locationRequired: false, requiresRoomCode: false });
+  f.config.biometrics = loadConfig({}).biometrics;
+  const { cookie } = await f.session();
+  const body = { eventId: 'current', location: f.location(), locationVerified: true, attendanceMode: 'onsite' };
+  assert.equal((await f.request('/events', { cookie })).status, 200);
+  assert.equal((await f.request('/attendance', { cookie, body })).status, 403, 'setup must still require a phone proof');
+  for (const token of [null, 'unverified', 'hire', 'unlisted']) {
+    assert.ok([401, 403].includes((await f.request('/attendance', { token, cookie, body })).status));
+  }
+  const deviceId = digest(readDevice({ headers: { cookie } }, f.config.cookieSecret));
+  const proof = 'b'.repeat(64), credentialId = 'phone-passkey';
+  await f.db.collection('BiometricCredentials').doc(digest(credentialId)).set({ active: true, uid: 'alice', deviceId });
+  await f.db.collection('BiometricProofs').doc(digest(proof)).set({ uid: 'alice', deviceId, eventId: 'current', credentialId, expiresAt: START + 60000, used: false, verifiedAt: new Date(START).toISOString() });
+  const result = await f.request('/attendance', { cookie, body: { ...body, biometricProof: proof } });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.equal(result.data.attendance.attendanceMode, 'setup');
+  assert.equal(result.data.attendance.locationVerified, false);
+  assert.equal(result.data.attendance.location, null);
+  assert.equal(result.data.attendance.venueAddress, null);
+  assert.equal(result.data.attendance.wifi, undefined);
+  assert.equal(result.data.attendance.verification.method, 'passkey-user-verification');
+  assert.equal(f.db.dump()[`BiometricProofs/${digest(proof)}`].used, true);
+  f.advance(1000);
+  const duplicate = await f.request('/attendance', { cookie, body: { eventId: 'current' } });
+  assert.equal(duplicate.data.alreadyMarked, true);
+  assert.equal(duplicate.data.attendance.timestamp, result.data.attendance.timestamp);
+  assert.equal((await f.request('/attendance', { cookie, body: { eventId: 'closed' } })).status, 403);
+  assert.equal((await f.request('/attendance', { cookie, body: { eventId: 'old' } })).status, 403);
+  const onsite = await fixture(t, {}, loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'true' }).venue, { required: true });
+  const onsiteMember = await onsite.session();
+  assert.equal((await onsite.request('/events', { cookie: onsiteMember.cookie })).status, 403, 'restoring onsite enforcement must reject an unleased setup client');
+});
 
 test('anonymous, invalid, unverified and unlisted identities cannot establish a device session', async t => {
   const f = await fixture(t);
@@ -248,7 +283,7 @@ test('concurrent first check-ins create exactly one record with one idempotent r
 });
 
 test('the supplied real venue pin supports the complete authenticated self check-in request', async t => {
-  const venue = loadConfig({}).venue;
+  const venue = loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'true' }).venue;
   const f = await fixture(t, {}, venue);
   const { cookie } = await f.session();
   const roomCode = await f.code();

@@ -17,6 +17,9 @@ function numeric(value, fallback, min, max, name) {
 
 function loadConfig(env = process.env) {
     const production = env.NODE_ENV === 'production';
+    const onsiteFlag = (env.ENFORCE_ONSITE_ATTENDANCE || 'false').trim().toLowerCase();
+    if (!['true', 'false'].includes(onsiteFlag)) throw new Error('Invalid ENFORCE_ONSITE_ATTENDANCE');
+    const onsite = onsiteFlag === 'true';
     const hosted = env.RENDER_EXTERNAL_HOSTNAME === HOSTED_DOMAIN;
     const cookieSecret = env.DEVICE_COOKIE_SECRET || (!production && crypto.randomBytes(32).toString('hex'));
     if (!cookieSecret || cookieSecret.length < 32) throw new Error('DEVICE_COOKIE_SECRET must contain at least 32 characters');
@@ -52,8 +55,8 @@ function loadConfig(env = process.env) {
     return {
         production,
         bootstrapHrEmail,
-        wifi: { required: true, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
-        access: { required: true, leaseSeconds: 30, maxLocationAgeMs: 15000 },
+        wifi: { required: onsite, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
+        access: { required: onsite, leaseSeconds: 30, maxLocationAgeMs: 15000 },
         biometrics: {
             required: true,
             configured: Boolean(rpID && (webOrigins.length || androidOrigins.length)),
@@ -66,7 +69,10 @@ function loadConfig(env = process.env) {
         trustProxy: numeric(env.TRUST_PROXY_HOPS, 0, 0, 10, 'TRUST_PROXY_HOPS'),
         allowedOrigins: (env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
         venue: {
-            attendanceWifi: { required: true, ssid: ATTENDANCE_SSID },
+            attendanceMode: onsite ? 'onsite' : 'setup',
+            accessRequired: onsite,
+            locationRequired: onsite,
+            attendanceWifi: { required: onsite, ssid: ATTENDANCE_SSID },
             address: VENUE_ADDRESS,
             mapsUrl: MAPS_URL,
             configured: latitude !== null && longitude !== null,
@@ -74,7 +80,7 @@ function loadConfig(env = process.env) {
             longitude,
             radiusMeters: numeric(env.VENUE_RADIUS_METERS, 100, 10, 500, 'VENUE_RADIUS_METERS'),
             maxAccuracyMeters: numeric(env.VENUE_MAX_ACCURACY_METERS, 50, 1, 100, 'VENUE_MAX_ACCURACY_METERS'),
-            requiresRoomCode: env.REQUIRE_ROOM_CODE !== 'false'
+            requiresRoomCode: onsite && env.REQUIRE_ROOM_CODE !== 'false'
         }
     };
 }

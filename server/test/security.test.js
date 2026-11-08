@@ -7,12 +7,28 @@ const NOW = Date.parse('2026-11-04T06:00:00Z');
 const VENUE = { configured: true, latitude: 12.9, longitude: 77.6, radiusMeters: 100, maxAccuracyMeters: 50 };
 const location = overrides => ({ latitude: 12.9, longitude: 77.6, accuracyMeters: 5, capturedAt: NOW, ...overrides });
 
+test('temporary setup mode removes physical checks while onsite mode restores them together', () => {
+  for (const value of [undefined, 'false', 'true']) {
+    const config = loadConfig(value === undefined ? {} : { ENFORCE_ONSITE_ATTENDANCE: value });
+    const onsite = value === 'true';
+    assert.equal(config.venue.attendanceMode, onsite ? 'onsite' : 'setup');
+    assert.equal(config.access.required, onsite);
+    assert.equal(config.venue.accessRequired, onsite);
+    assert.equal(config.venue.locationRequired, onsite);
+    assert.equal(config.wifi.required, onsite);
+    assert.equal(config.venue.attendanceWifi.required, onsite);
+    assert.equal(config.venue.requiresRoomCode, onsite);
+    assert.equal(config.biometrics.required, true);
+  }
+  assert.throws(() => loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'maybe' }), /ENFORCE_ONSITE_ATTENDANCE/);
+});
+
 test('owner-confirmed venue defaults are used, missing override fails closed, and production needs a strong secret', () => {
   const config = loadConfig({});
   assert.equal(config.venue.configured, true);
   assert.equal(config.venue.latitude, 12.912773610440954);
   assert.equal(config.venue.longitude, 77.62322878099566);
-  assert.equal(config.venue.requiresRoomCode, true);
+  assert.equal(config.venue.requiresRoomCode, false);
   assert.throws(() => checkLocation(location(), { ...config.venue, configured: false }, NOW), error => error.status === 503);
   assert.throws(() => loadConfig({ NODE_ENV: 'production' }), /DEVICE_COOKIE_SECRET/);
   assert.throws(() => loadConfig({ NODE_ENV: 'production', DEVICE_COOKIE_SECRET: 'short' }), /DEVICE_COOKIE_SECRET/);

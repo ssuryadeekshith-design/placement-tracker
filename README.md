@@ -4,6 +4,8 @@ Email-verified attendance with signed phone user verification, a room code, venu
 
 Venue: **2nd floor, Srivari Arcade, NGR Layout, Roopena Agrahara, Bommanahalli, Bengaluru, Karnataka 560068**. Owner-confirmed pin: **12.912773610440954, 77.62322878099566**. Default radius: 100 m.
 
+**Temporary setup mode is now the default at the owner's request.** Approved employees can open the app and mark self-reported attendance without GPS, venue Wi-Fi or a room code. Verified email, HR approval, phone passkey and an open event for today remain required. Records explicitly state that location was not verified. See [deployment, APK transfer and HR steps](docs/temporary-setup-mode.md). Set `ENFORCE_ONSITE_ATTENDANCE=true` on the backend and redeploy to restore the venue restrictions described below.
+
 ## Venue-only access
 
 The native app and website now lock their main screens until a new precise position is inside the venue area. Outside, stale, missing or uncertain positions lock access again. The Android app checks foreground fixes roughly every five seconds, expires them after 15 seconds and requires a new fix after resuming. The website asks before foreground monitoring and locks when hidden. API access is also checked with short-lived account/profile-bound location tokens; this is not only a hidden button in the UI.
@@ -85,7 +87,7 @@ The Android app now includes the supplied public Firebase configuration for `pla
 5. Register the Android package **`in.shikshavertex.attendance`** in the same Firebase project. Place its public configuration in `mobile/android/app/google-services.json` (the supplied matching file is already installed). Configure only `ATTENDANCE_API_URL` separately using `mobile/android/config.properties.example`. The Android README explains build/install and signing. Private Admin keys must never enter an APK.
 6. Backend: use host-provided Application Default Credentials or set `GOOGLE_APPLICATION_CREDENTIALS` to a securely mounted Admin service-account JSON file. The ignored legacy `server/serviceAccountKey.json` remains supported. Set `GCLOUD_PROJECT` to your project ID and use appropriate least-privilege Firestore/Firebase Authentication permissions, including token revocation checks.
 7. Copy `server/.env.example` to `server/.env`. Generate a stable random cookie secret (at least 32 characters) on your own trusted computer: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Keep it in host secret settings and out of source/chat.
-8. The confirmed venue pin is already configured. Override `VENUE_LATITUDE` and `VENUE_LONGITUDE` together if required. A partial override disables check-in. Test the radius and indoor accuracy on site. Keep `REQUIRE_ROOM_CODE=true`.
+8. The confirmed venue pin is already configured. During temporary setup keep `ENFORCE_ONSITE_ATTENDANCE=false`. When ready for onsite enforcement, set it to `true`, retain `REQUIRE_ROOM_CODE=true`, and test the radius/indoor accuracy on site. Override `VENUE_LATITUDE` and `VENUE_LONGITUDE` together if required; a partial override disables onsite check-in.
 
 `npm run seed:emails` creates exactly the eight approved-email records; startup also runs it. It does not create passwords or Firebase Authentication accounts. Repeating the seed preserves disabled members, UID ownership and unrelated approved members. A new `Users` record is created only after a verified approved member signs in.
 

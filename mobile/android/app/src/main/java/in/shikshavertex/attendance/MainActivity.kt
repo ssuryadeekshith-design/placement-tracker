@@ -48,6 +48,8 @@ class MainActivity : FragmentActivity() {
     private var ceremonyInProgress = false
     private var venueRevision = 0L
     private var actionJob: Job? = null
+    private var policyJob: Job? = null
+    private var policyLoaded = false
     private var reportDialog: AlertDialog? = null
     private lateinit var venueMonitor: VenueMonitor
     private var session: JSONObject? = null
@@ -87,19 +89,37 @@ class MainActivity : FragmentActivity() {
         try { auth = FirebaseAuth.getInstance(); api = ApiClient(this) }
         catch (_: Exception) { text("The app configuration is invalid. Ask the administrator for a configured build. No tracking is running."); return }
         lifecycleScope.launch { TrackingService.state.collect { trackingLabel?.text = it } }
-        lockVenue("Location access is required to unlock the app at the venue.")
+        lockVenue("Loading attendance settings…")
     }
     override fun onResume() {
         super.onResume()
-        if (::venueMonitor.isInitialized && ::api.isInitialized) venueMonitor.start()
+        if (::api.isInitialized) refreshAccessPolicy()
     }
     override fun onPause() {
+        policyJob?.cancel()
         AttendanceWifi.stopObserving()
         if (::venueMonitor.isInitialized) venueMonitor.stop()
         if (::api.isInitialized) {
-            lockVenue("The app is locked until you return and confirm a new location.")
+            lockVenue("Return to the app to continue.")
         }
         super.onPause()
+    }
+    private fun refreshAccessPolicy() {
+        policyJob?.cancel()
+        policyJob = lifecycleScope.launch {
+            try {
+                AttendancePolicyState.current = api.loadPolicy()
+                policyLoaded = true
+                if (AttendancePolicyState.current.onsiteRequired) {
+                    lockVenue("Allow precise location to open the app at the venue.")
+                    venueMonitor.start()
+                } else {
+                    venueUnlocked = true; venueRevision++
+                    if (!ceremonyInProgress) openAccount()
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { policyLoaded = false; lockVenue(error.message ?: "Cannot load attendance settings. Check your internet and retry.") }
+        }
     }
     private fun openAccount() {
         if (!venueUnlocked) return
@@ -108,16 +128,18 @@ class MainActivity : FragmentActivity() {
     }
     private fun lockVenue(reason: String) {
         val wasUnlocked = venueUnlocked
-        if (wasUnlocked && ::api.isInitialized && !ceremonyInProgress) lifecycleScope.launch { runCatching { api.json("/access/lock", "POST", JSONObject()) } }
+        if (wasUnlocked && AttendancePolicyState.current.onsiteRequired && ::api.isInitialized && !ceremonyInProgress) lifecycleScope.launch { runCatching { api.json("/access/lock", "POST", JSONObject()) } }
         venueUnlocked = false; venueRevision++; if (!ceremonyInProgress) actionJob?.cancel(); busy = false
         VenueAccessState.lock(); reportDialog?.dismiss(); reportDialog = null
-        layout(); heading("App locked — venue access required"); text(reason)
-        text("Visit Srivari Arcade at 12.912773610440954, 77.62322878099566. Access requires a fresh, accurate location inside the 100 m venue area. GPS cannot identify the second floor.", 14f)
-        text("Foreground location checks unlock the app; they do not start workday tracking or save an access-location history. If you already consented to daily sharing, that visible service continues while away so departure and return can be reported.", 13f)
-        button("Allow precise location / retry") {
-            requestPermissionsThen(false) { venueMonitor.start() }
-        }
-        button("View venue on Maps") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) }
+        layout(); heading(if (policyLoaded && AttendancePolicyState.current.onsiteRequired) "App locked — venue access required" else "Attendance access"); text(reason)
+        if (policyLoaded && AttendancePolicyState.current.onsiteRequired) {
+            text("Visit Srivari Arcade at 12.912773610440954, 77.62322878099566. Access requires a fresh, accurate location inside the 100 m venue area. GPS cannot identify the second floor.", 14f)
+            text("Foreground location checks unlock the app; they do not start workday tracking or save an access-location history. If you already consented to daily sharing, that visible service continues while away so departure and return can be reported.", 13f)
+            button("Allow precise location / retry") {
+                requestPermissionsThen(false) { venueMonitor.start() }
+            }
+            button("View venue on Maps") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) }
+        } else button("Retry attendance settings") { refreshAccessPolicy() }
         button("Stop location sharing") {
             stopService(Intent(this, TrackingService::class.java)); TrackingService.state.value = "Location tracking stopped on this phone."
             lifecycleScope.launch { runCatching { api.json("/tracking/stop", "POST", JSONObject()) }; showMessage("Location sharing stopped on this phone.") }
@@ -138,6 +160,7 @@ class MainActivity : FragmentActivity() {
         setContentView(ScrollView(this).apply { isFillViewport = true; addView(content) })
         text("SHIKSHA VERTEX · BENGALURU", 12f).setTextColor(Color.rgb(22, 112, 86))
         heading("Attendance portal")
+        if (policyLoaded && !AttendancePolicyState.current.onsiteRequired) text("Temporary setup mode: attendance does not check GPS, venue Wi-Fi or a room code. Physical presence is not verified.", 14f)
         message = text("").apply { setTextColor(Color.rgb(150, 48, 25)); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
     }
     private fun heading(value: String) = text(value, 25f).apply { setPadding(0, dp(12), 0, dp(10)); setTextColor(Color.rgb(23, 49, 45)) }
@@ -250,7 +273,8 @@ class MainActivity : FragmentActivity() {
         val biometric = api.json("/biometrics")
         registeredPasskey = biometric.optBoolean("registered")
         biometricConfigured = biometric.optBoolean("configured")
-        val events = (0 until eventsResponse.length()).map { eventsResponse.getJSONObject(it) }.filter { it.optBoolean("checkInOpen") }
+        val allEvents = (0 until eventsResponse.length()).map { eventsResponse.getJSONObject(it) }
+        val events = allEvents.filter { it.optBoolean("checkInOpen") && it.optString("date") == Workday.date() }
         layout()
         val employee = session?.optJSONObject("user")
         if (!employee?.optString("fullName").isNullOrBlank()) heading(employee!!.optString("fullName"))
@@ -259,45 +283,67 @@ class MainActivity : FragmentActivity() {
         val venue = session?.optJSONObject("venue")
         text(venue?.optString("address") ?: "2nd floor, Srivari Arcade, Bengaluru")
         button("View venue on Maps") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) }
-        if (employee?.optString("role") == "committee") button("Review employee approval requests") { runAction {
-            showEmployeeRequests(api.array("/registration-requests"), api.array("/employees"))
-        } }
-        heading("Required attendance Wi-Fi")
-        text("Connect to ${WifiRule.REQUIRED_SSID} before marking attendance. The app checks the connected network immediately before submission. It does not save or enter the Wi-Fi password.", 14f)
-        button("Open Android Wi-Fi settings") { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) }
-        button("Check attendance Wi-Fi connection") { runAction {
-            AttendanceWifi.requireConnected(this)
-            showMessage("Connected to the required Wi-Fi. Location, passkey and room-code checks still apply.")
-        } }
+        if (employee?.optString("role") == "committee") {
+            button("Review employee approval requests") { runAction {
+                showEmployeeRequests(api.array("/registration-requests"), api.array("/employees"))
+            } }
+            val daily = allEvents.firstOrNull { it.optString("date") == Workday.date() && it.optString("title") == "Daily employee attendance" }
+            button("Open today's attendance") { runAction {
+                val latest = api.array("/events")
+                val today = Workday.date()
+                val existing = (0 until latest.length()).map { latest.getJSONObject(it) }.firstOrNull { it.optString("date") == today && it.optString("title") == "Daily employee attendance" }
+                val event = existing ?: api.json("/events", "POST", JSONObject().put("title", "Daily employee attendance").put("date", today).put("isMandatory", true))
+                api.json("/events/${event.getString("id")}", "PATCH", JSONObject().put("checkInOpen", true))
+                renderDashboard(); showMessage("Today's attendance is open. Approved employees can tap Refresh attendance to load it.")
+            } }
+            if (daily?.optBoolean("checkInOpen") == true) button("Close today's attendance") { runAction {
+                api.json("/events/${daily.getString("id")}", "PATCH", JSONObject().put("checkInOpen", false))
+                renderDashboard(); showMessage("Today's attendance is closed.")
+            } }
+        }
+        if (AttendancePolicyState.current.onsiteRequired) {
+            heading("Required attendance Wi-Fi")
+            text("Connect to ${WifiRule.REQUIRED_SSID} before marking attendance. The app checks the connected network immediately before submission. It does not save or enter the Wi-Fi password.", 14f)
+            button("Open Android Wi-Fi settings") { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) }
+            button("Check attendance Wi-Fi connection") { runAction {
+                AttendanceWifi.requireConnected(this)
+                showMessage("Connected to the required Wi-Fi. Location, passkey and room-code checks still apply.")
+            } }
+        }
         heading("Biometric / passkey attendance")
         text("Your phone verifies you using a passkey. Depending on Android settings, this can use a fingerprint, face or device PIN. The app receives a signed proof, never your biometric template.", 13f)
         text(if (!biometricConfigured) "Passkey setup is incomplete on the server. Contact the administrator." else if (registeredPasskey) "Passkey enrolled. Verify with it each time you mark attendance." else "Enroll a passkey before your first attendance check-in.", 14f)
         button("Enroll phone passkey") { runAction { enrollPasskey(); renderDashboard(); showMessage("Phone passkey enrolled.") } }.isEnabled = biometricConfigured
+        button("Refresh attendance") { runAction { renderDashboard() } }
         val picker = Spinner(this)
         picker.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("Select an open event") + events.map { it.optString("title") + " · " + it.optString("date") })
         picker.contentDescription = "Attendance event"
         content.addView(picker, LinearLayout.LayoutParams(-1, dp(54)))
-        val roomCode = input("Current room code").apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER }
+        val onsite = AttendancePolicyState.current.onsiteRequired
+        val roomCode = if (onsite && venue?.optBoolean("requiresRoomCode", true) != false) input("Current room code").apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER } else null
         val checkinConsent = CheckBox(this).apply {
-            text = "I agree to save my location, accuracy and time for this attendance check-in."
+            text = if (onsite) "I agree to save my location, accuracy and time for this attendance check-in." else "I confirm I am marking my own attendance. Physical location is not verified in setup mode."
             setPadding(0, dp(8), 0, dp(8)); content.addView(this)
         }
         button("Verify phone and mark attendance") {
-            if (!checkinConsent.isChecked) { showMessage("Agree to record your location before checking in."); return@button }
+            if (!checkinConsent.isChecked) { showMessage("Read and confirm the attendance statement first."); return@button }
             val selected = picker.selectedItemPosition - 1
             if (selected !in events.indices) { showMessage("Select an open event."); return@button }
             if (!registeredPasskey || !biometricConfigured) { showMessage("Enroll a phone passkey first."); return@button }
-            requestPermissionsThen(false) { runAction {
-                AttendanceWifi.requireConnected(this)
+            val submit: () -> Unit = { runAction {
+                if (onsite) AttendanceWifi.requireConnected(this)
                 val event = events[selected]
-                val location = LocationAccess.current(this)
+                val location = if (onsite) LocationAccess.current(this) else null
                 val proof = verifyPasskey(event.getString("id"))
-                val body = JSONObject().put("eventId", event.getString("id")).put("location", LocationAccess.point(location))
-                    .put("roomCode", roomCode.text.toString().trim()).put("biometricProof", proof)
+                val body = JSONObject().put("eventId", event.getString("id")).put("biometricProof", proof)
+                if (location != null) body.put("location", LocationAccess.point(location))
+                roomCode?.let { body.put("roomCode", it.text.toString().trim()) }
                 val response = api.json("/attendance", "POST", body)
-                checkinConsent.isChecked = false; roomCode.text.clear()
-                showMessage(if (response.optBoolean("alreadyMarked")) "Your attendance was already recorded. The first record was preserved." else "Attendance recorded with phone user verification and location.")
+                checkinConsent.isChecked = false; roomCode?.text?.clear()
+                renderDashboard()
+                showMessage(if (response.optBoolean("alreadyMarked")) "Your attendance was already recorded. The first record was preserved." else if (onsite) "Attendance recorded with phone user verification and location." else "Attendance recorded in setup mode. Physical location was not verified.")
             } }
+            if (onsite) requestPermissionsThen(false, submit) else submit()
         }
         heading("Workday location sharing")
         text("10:30 AM–8:30 PM, India time. Start each day explicitly. While active, the app records your route, time away from the venue and approximate stops. You and committee members can see the report. The configured retention target is 30 days; ask the committee to confirm deletion policy. A persistent notification includes Stop. GPS uncertainty or missing signals appear as unknown time, not proof that you stayed or left.", 14f)
@@ -392,11 +438,11 @@ class MainActivity : FragmentActivity() {
     }
     private suspend fun awaitVenueAfterSystemPrompt() {
         // Credential Manager may pause this Activity. Cover its content while
-        // paused, then require a new venue fix before accepting the OS result.
+        // paused, then reload policy (and require a new fix in onsite mode).
         kotlinx.coroutines.withTimeout(30000) {
             while (!venueUnlocked) kotlinx.coroutines.delay(100)
         }
-        VenueAccessState.current()
+        if (AttendancePolicyState.current.onsiteRequired) VenueAccessState.current()
     }
     private fun requestPermissionsThen(tracking: Boolean, action: () -> Unit) {
         val needed = mutableListOf<String>()

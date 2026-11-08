@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import api from './api';
-import { clearVenueAccess, setVenueLocation } from './venueAccess';
+import { clearVenueAccess, setVenueLocation, setVenuePolicy, isSetupPolicy } from './venueAccess';
 
 export function evaluateVenue(position, venue, now = Date.now()) {
   const c = position?.coords;
@@ -16,6 +16,8 @@ export function evaluateVenue(position, venue, now = Date.now()) {
 
 export default function VenueGate({ children }) {
   const [unlocked, setUnlocked] = useState(false);
+  const [setup, setSetup] = useState(false);
+  const setupMode = useRef(false);
   const [message, setMessage] = useState('Confirm your current location to unlock the attendance app at the venue.');
   const watch = useRef(null);
   const fix = useRef(null);
@@ -36,26 +38,37 @@ export default function VenueGate({ children }) {
   }, []);
   useEffect(() => {
     active.current = true;
+    api.get('/venue').then(({ data }) => {
+      if (!active.current) return;
+      setVenuePolicy(data);
+      if (isSetupPolicy(data)) {
+        setupMode.current = true; setSetup(true); setUnlocked(true);
+      }
+    }).catch(() => {});
     const visibility = () => {
+      if (setupMode.current) return;
       stop(); lock('The app is locked. Check your location again after returning to this window.');
     };
     const timer = setInterval(() => {
       if (fix.current && !evaluateVenue(fix.current, venue.current)) lock('Your location is stale or outside the venue. Get a fresh precise location to unlock.');
     }, 1000);
-    const denied = () => lock('The server locked venue access. Get a new precise location and retry.');
+    const denied = () => { setupMode.current = false; setSetup(false); setVenuePolicy(null); lock('The server locked venue access. Get a new precise location and retry.'); };
     window.addEventListener('venue-access-locked', denied);
     document.addEventListener('visibilitychange', visibility);
-    return () => { active.current = false; stop(); clearVenueAccess(); clearInterval(timer); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('venue-access-locked', denied); };
+    return () => { active.current = false; stop(); clearVenueAccess(); setVenuePolicy(null); clearInterval(timer); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('venue-access-locked', denied); };
   }, [lock, stop]);
 
   async function start() {
     stop(); lock('Checking the venue and waiting for a fresh precise location…');
     const current = generation.current;
-    if (!navigator.geolocation) { setMessage('This browser has no location support. Use the Android app or a supported browser.'); return; }
     if (document.hidden) return;
     try {
       const { data } = await api.get('/venue');
       if (!active.current || current !== generation.current || document.hidden) return;
+      setVenuePolicy(data);
+      if (isSetupPolicy(data)) { setupMode.current = true; setSetup(true); setUnlocked(true); return; }
+      setupMode.current = false; setSetup(false);
+      if (!navigator.geolocation) throw new Error('This browser has no location support. Use a supported browser.');
       if (!data?.configured) throw new Error('The venue has not been configured by the administrator.');
       venue.current = data; beganAt.current = Date.now();
       watch.current = navigator.geolocation.watchPosition(position => {
@@ -69,7 +82,7 @@ export default function VenueGate({ children }) {
       }, () => lock('Location is unavailable or permission was denied. Enable precise location and retry.'), { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     } catch (error) { if (active.current && current === generation.current) setMessage(error.response?.data?.error || error.message || 'Venue access is unavailable.'); }
   }
-  if (unlocked) return children;
+  if (unlocked) return <>{setup && <div className="alert" role="status">Temporary setup mode: venue, Wi-Fi and GPS are not checked. Attendance does not verify physical presence.</div>}{children}</>;
   return <main className="venue-lock"><section className="card auth-card">
     <p className="eyebrow">SHIKSHA VERTEX · BENGALURU</p><h1>App locked</h1>
     <p role="status">{message}</p>

@@ -1,5 +1,7 @@
 # Shiksha Vertex employee onboarding
 
+**Current temporary setup mode:** venue location, Wi-Fi and room-code checks are disabled until the owner enables `ENFORCE_ONSITE_ATTENDANCE=true`. Email verification, HR approval, passkeys and open-event/date rules remain. The venue requirements below describe onsite mode. Follow [the current phone installation and HR steps](temporary-setup-mode.md).
+
 `server/employees.json` contains the 64 employee profiles provided by the owner: full name, designation, department and team. Whitespace is trimmed; source spelling and team/department inconsistencies are preserved for HR review. Stable IDs SV001–SV064 distinguish profiles without using a job title as an authorization role. Emails are initially null; none were invented from names.
 
 Startup and `npm run seed:employees` create missing `Employees` records. The repeatable seed never overwrites an HR edit, account/email binding or inactive flag and never creates Firebase Authentication accounts or grants permissions. Existing legacy eight approved emails continue to work and are not silently assigned to names. HR must verify identity before creating any additional binding.
