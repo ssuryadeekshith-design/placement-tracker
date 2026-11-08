@@ -30,7 +30,21 @@ jobs:
           key: attendance-debug-signing-v1
       - name: Build and test Android app
         working-directory: mobile/android
-        run: bash gradlew :app:assembleDebug :app:testDebugUnitTest
+        run: bash gradlew :app:assembleDebug :app:testDebugUnitTest -PATTENDANCE_API_URL=https://placement-tracker-lyjf.onrender.com/api
+      - name: Verify the built APK contains the hosted API address
+        env:
+          APK_PATH: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, zipfile
+          endpoint = 'https://placement-tracker-lyjf.onrender.com/api'
+          with zipfile.ZipFile(os.environ['APK_PATH']) as apk:
+              dex_files = [name for name in apk.namelist() if name.startswith('classes') and name.endswith('.dex')]
+              assert any(endpoint.encode() in apk.read(name) for name in dex_files), 'Attendance API address is missing from the APK'
+          package = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/35.0.0/aapt', 'dump', 'badging', os.environ['APK_PATH']], text=True).splitlines()[0]
+          with open('build-info.txt', 'w') as info:
+              info.write(f"{package}\nCommit: {os.environ['GITHUB_SHA']}\nRun: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\nAttendance API: {endpoint}\n")
+          PY
       - name: Verify APK signature
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs mobile/android/app/build/outputs/apk/debug/app-debug.apk | tee certificate.txt
@@ -43,4 +57,5 @@ jobs:
             mobile/android/app/build/outputs/apk/debug/app-debug.apk
             certificate.txt
             render-passkeys.env
+            build-info.txt
           if-no-files-found: error

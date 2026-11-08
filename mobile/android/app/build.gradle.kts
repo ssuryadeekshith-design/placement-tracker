@@ -1,10 +1,24 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
     id("org.jetbrains.kotlin.android")
 }
 
-fun config(name: String): String = providers.gradleProperty(name).orElse(providers.environmentVariable(name)).orElse("https://placement-tracker-lyjf.onrender.com/api").get()
+fun attendanceApiUrl(): String {
+    // An empty property/environment variable must not erase the hosted default.
+    val url = sequenceOf(providers.gradleProperty("ATTENDANCE_API_URL").orNull,
+        providers.environmentVariable("ATTENDANCE_API_URL").orNull,
+        "https://placement-tracker-lyjf.onrender.com/api")
+        .first { !it.isNullOrBlank() }!!.trim().trimEnd('/')
+    val uri = URI(url)
+    val localDebugHost = uri.scheme == "http" && uri.host in setOf("localhost", "127.0.0.1", "10.0.2.2")
+    require((uri.scheme == "https" || localDebugHost) && uri.host != null && uri.userInfo == null && uri.query == null && uri.fragment == null) {
+        "ATTENDANCE_API_URL must be an HTTPS API address (HTTP is allowed only for a local debug host)."
+    }
+    return url
+}
 fun literal(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "") + "\""
 
 android {
@@ -15,9 +29,9 @@ android {
         applicationId = "in.shikshavertex.attendance"
         minSdk = 28
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
-        buildConfigField("String", "API_BASE_URL", literal(config("ATTENDANCE_API_URL")))
+        versionCode = 3
+        versionName = "1.2"
+        buildConfigField("String", "API_BASE_URL", literal(attendanceApiUrl()))
     }
     buildFeatures { buildConfig = true }
     compileOptions {

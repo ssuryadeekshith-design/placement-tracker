@@ -48,7 +48,7 @@ The Firebase file does **not** include the attendance API address. Supply the pu
 ./gradlew :app:assembleDebug -PATTENDANCE_API_URL=https://your-attendance.example.com/api
 ```
 
-Use an actual hosted address including `/api`; the example hostname is not a deployed service. The setting is also accepted as an environment variable or a Gradle property (see `config.properties.example`). A build without it now reports that Firebase is configured but the attendance service address is missing. This lets administrators distinguish the remaining API requirement from Firebase initialization.
+Use an actual hosted address including `/api`; the example hostname is not a deployed service. Version 1.2 defaults to `https://placement-tracker-lyjf.onrender.com/api`. Nonblank Gradle properties take priority over a nonblank environment value; blank values fall back to the hosted default. Invalid URL settings fail the build. The Actions workflow explicitly supplies this hosted address, tests the compiled configuration, checks the APK's DEX contents for that address and includes `build-info.txt` with its commit/run/API. This makes an older artifact distinguishable from the intended new build. Updating Firebase alone does not configure an older APK's API address.
 
 Enable **Email/Password** Authentication in this same Firebase project. A backend using a different Firebase project cannot verify these users' tokens. The server still needs its own securely provided Admin/ADC credentials, Firestore database/rules, approved emails and passkey domain association. The public Android JSON grants none of those server permissions. Actual sign-in/email verification and database operations require runtime validation against the configured service.
 
