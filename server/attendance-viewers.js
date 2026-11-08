@@ -53,7 +53,9 @@ async function attendanceReport({ db, date, eventId, now }) {
         const r = row(log.uid, log.email);
         r.status = 'marked';
         // Deliberately omit location coordinates, biometric proofs, device IDs and movement history.
-        r.checkIns.push({ eventId: log.eventId, eventTitle: events.find(e => e.id === log.eventId)?.title || '', timestamp: log.timestamp, method: log.method, attendanceMode: log.attendanceMode || 'legacy', locationChecked: log.locationVerified === true });
+        r.checkIns.push({ eventId: log.eventId, eventTitle: events.find(e => e.id === log.eventId)?.title || '', timestamp: log.timestamp, method: log.method, attendanceMode: log.attendanceMode || 'legacy', locationChecked: log.locationVerified === true,
+            phoneVerified: log.verification?.method === 'passkey-user-verification',
+            venueWifiObserved: log.wifi?.verification === 'native-client-observation' && log.wifi?.ssid === 'Shikshavertex_5G' });
     }
     const result = [...rows.values()].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
     for (const r of result) r.checkIns.sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));

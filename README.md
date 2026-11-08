@@ -1,5 +1,7 @@
 # Shiksha Vertex attendance
 
+The first two redesigned Android views—Employee Attendance Dashboard and All-Employees Attendance Viewer—have [an interactive design reference and screen previews](docs/design/README.md). Their native implementation is version 1.5; APK publication still requires recovery of the existing signing key.
+
 The owner-selected attendance viewers are `hr@shikshavertex.in`, `surya_deekshith@shikshavertex.in` and `hr_pallavi@shikshavertex.in`. The first keeps existing HR permissions; the latter two gain read-only attendance viewing without new HR or other-person movement-history rights. See [viewer access, dashboard use and deployment](docs/attendance-viewers.md).
 
 Email-verified attendance with signed phone user verification, a room code, venue proximity and an Android app for explicitly consented daily location reporting.

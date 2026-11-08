@@ -1,5 +1,7 @@
 # Shiksha Vertex Android attendance
 
+Version **1.5** implements the first two redesigned native views: Employee Attendance Dashboard and All-Employees Attendance Viewer. See [the design reference, interaction details and validation notes](../../docs/design/README.md). The existing signing-key publication blocker still applies.
+
 A native Android companion to the same authenticated attendance API. Package name: **`in.shikshavertex.attendance`**. The app implements verified email registration/sign-in, phone passkey enrollment and attendance, explicit daily location sharing through a visible foreground service, and readable daily movement reports.
 
 Version **1.3** allows screenshots of app screens by removing the Activity's `FLAG_SECURE` restriction. Android's own credential/biometric prompts or a device administrator may still restrict capture of their screens.
