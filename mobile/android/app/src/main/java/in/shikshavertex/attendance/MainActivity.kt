@@ -19,6 +19,9 @@ import android.widget.ArrayAdapter
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.content.ContextCompat
 import androidx.credentials.CreatePublicKeyCredentialRequest
 import androidx.credentials.CreatePublicKeyCredentialResponse
@@ -45,6 +48,8 @@ class MainActivity : FragmentActivity() {
     private var busy = false
     private var venueUnlocked = false
     private var ceremonyInProgress = false
+    private var restoreAfterPrompt = false
+    private var actionGeneration = 0L
     private var venueRevision = 0L
     private var actionJob: Job? = null
     private var policyJob: Job? = null
@@ -57,6 +62,12 @@ class MainActivity : FragmentActivity() {
     private var pendingPermissions: (() -> Unit)? = null
     private val buttons = mutableListOf<Button>()
     private var trackingLabel: TextView? = null
+    private var dashboardScreen: EmployeeDashboardScreen? = null
+    private var viewerScreen: AttendanceViewerScreen? = null
+    private var designedBusy: ((Boolean) -> Unit)? = null
+    private var designedMessage: ((String) -> Unit)? = null
+    private var preferredAttendanceSession = ""
+    private val savedReceipts = mutableMapOf<String, JSONObject>()
     private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val action = pendingPermissions
         pendingPermissions = null
@@ -86,7 +97,7 @@ class MainActivity : FragmentActivity() {
         }
         try { auth = FirebaseAuth.getInstance(); api = ApiClient(this) }
         catch (_: Exception) { text("The app configuration is invalid. Ask the administrator for a configured build. No tracking is running."); return }
-        lifecycleScope.launch { TrackingService.state.collect { trackingLabel?.text = it } }
+        lifecycleScope.launch { TrackingService.state.collect { trackingLabel?.text = it; dashboardScreen?.updateTracking(it) } }
         lockVenue("Loading attendance settings…")
     }
     override fun onResume() {
@@ -149,6 +160,8 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun layout() {
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        dashboardScreen = null; viewerScreen = null; designedBusy = null; designedMessage = null
         buttons.clear()
         trackingLabel = null
         content = LinearLayout(this).apply {
@@ -180,15 +193,54 @@ class MainActivity : FragmentActivity() {
         content.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }); buttons.add(this)
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun showMessage(value: String) { message.text = value }
+    private fun showMessage(value: String) {
+        val display = designedMessage
+        if (display != null) display(value) else message.text = value
+    }
+    private fun mountDesigned(view: View, setBusy: (Boolean) -> Unit, displayMessage: (String) -> Unit) {
+        restoreAfterPrompt = false
+        buttons.clear(); trackingLabel = null
+        designedBusy = setBusy; designedMessage = displayMessage
+        view.fitsSystemWindows = false
+        val left = view.paddingLeft; val top = view.paddingTop
+        val right = view.paddingRight; val bottom = view.paddingBottom
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            v.setPadding(left + bars.left, top + bars.top, right + bars.right, bottom + maxOf(bars.bottom, ime.bottom))
+            insets
+        }
+        setContentView(view); ViewCompat.requestApplyInsets(view)
+        setBusy(busy)
+    }
     private fun runAction(action: suspend () -> Unit) {
         if (busy || !venueUnlocked) return
-        busy = true; buttons.forEach { it.isEnabled = false }; showMessage("Please wait…")
+        val generation = ++actionGeneration
+        busy = true; buttons.forEach { it.isEnabled = false }; designedBusy?.invoke(true); showMessage("")
         actionJob = lifecycleScope.launch {
             try { action() } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
-                if (venueUnlocked) showMessage(error.message ?: "The operation failed. Please try again.")
-            } finally { busy = false; buttons.forEach { it.isEnabled = true } }
+                if (venueUnlocked && generation == actionGeneration) {
+                    if (restoreAfterPrompt) { restoreAfterPrompt = false; runCatching { renderDashboard() } }
+                    showMessage(error.message ?: "The operation failed. Please try again.")
+                }
+            } finally { if (generation == actionGeneration) { busy = false; buttons.forEach { it.isEnabled = true }; designedBusy?.invoke(false) } }
         }
+    }
+    private fun showDesignLoading(title: String) {
+        val ui = AttendanceUi(this)
+        val root = ui.canvas()
+        root.addView(ui.text("SHIKSHAVERTEX", 12f, AttendanceUi.INDIGO, true))
+        ui.space(root); ui.section(root, title, "Retrieving your authorized attendance data.")
+        ui.space(root)
+        val card = ui.card(root)
+        val progress = android.widget.ProgressBar(this)
+        card.addView(progress)
+        val error = ui.text("", 14f, AttendanceUi.RED).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        card.addView(error)
+        val retry = ui.button(card, "Retry", true) { runAction { renderDashboard() } }
+        val signOut = ui.button(card, "Sign out") { signOutAccount() }
+        mountDesigned(root, { loading -> progress.visibility = if (loading) View.VISIBLE else View.GONE; retry.isEnabled = !loading; signOut.isEnabled = !loading }, { value -> error.text = value; if (value.isNotBlank()) progress.visibility = View.GONE })
     }
 
     private fun renderLogin() {
@@ -267,124 +319,117 @@ class MainActivity : FragmentActivity() {
     }
     private suspend fun renderDashboard() {
         if (!venueUnlocked) return
-        val account = session?.optJSONObject("user")
-        if (account?.optString("role") == "attendance-viewer") {
-            layout(); text(account.optString("email")); heading("Attendance viewer")
-            text("Read-only access to everyone's attendance. This account does not have employee or HR management access.")
-            button("View everyone's attendance") { runAction { renderAttendanceReport() } }
-            button("Sign out") { auth.signOut(); session = null; renderLogin() }
-            return
-        }
-        val eventsResponse = api.array("/events")
+        val employee = session?.optJSONObject("user") ?: return
+        if (dashboardScreen == null && viewerScreen == null) showDesignLoading(if (employee.optString("role") == "attendance-viewer") "Loading attendance records" else "Loading my attendance")
+        if (employee.optString("role") == "attendance-viewer") { renderAttendanceReport(); return }
+        val eventResponse = api.array("/events")
         val biometric = api.json("/biometrics")
+        val history = api.json("/attendance-summary").optJSONArray("logs")
         registeredPasskey = biometric.optBoolean("registered")
         biometricConfigured = biometric.optBoolean("configured")
-        val allEvents = (0 until eventsResponse.length()).map { eventsResponse.getJSONObject(it) }
-        val events = allEvents.filter { it.optBoolean("checkInOpen") && it.optString("date") == Workday.date() }
-        layout()
-        val employee = session?.optJSONObject("user")
-        if (!employee?.optString("fullName").isNullOrBlank()) heading(employee!!.optString("fullName"))
-        text(employee?.optString("email") ?: "Signed in")
-        if (employee?.optBoolean("canViewAllAttendance") == true) button("View everyone's attendance") { runAction { renderAttendanceReport() } }
-        if (!employee?.optString("department").isNullOrBlank()) text("${employee!!.optString("department")} · ${employee.optString("team")}", 14f)
-        val venue = session?.optJSONObject("venue")
-        text(venue?.optString("address") ?: "2nd floor, Srivari Arcade, Bengaluru")
-        button("View venue on Maps") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) }
-        if (employee?.optString("role") == "committee") {
-            button("Review employee approval requests") { runAction {
-                showEmployeeRequests(api.array("/registration-requests"), api.array("/employees"))
-            } }
-            val daily = allEvents.firstOrNull { it.optString("date") == Workday.date() && it.optString("title") == "Daily employee attendance" }
-            button("Open today's attendance") { runAction {
-                val latest = api.array("/events")
-                val today = Workday.date()
-                val existing = (0 until latest.length()).map { latest.getJSONObject(it) }.firstOrNull { it.optString("date") == today && it.optString("title") == "Daily employee attendance" }
-                val event = existing ?: api.json("/events", "POST", JSONObject().put("title", "Daily employee attendance").put("date", today).put("isMandatory", true))
-                api.json("/events/${event.getString("id")}", "PATCH", JSONObject().put("checkInOpen", true))
-                renderDashboard(); showMessage("Today's attendance is open. Approved employees can tap Refresh attendance to load it.")
-            } }
-            if (daily?.optBoolean("checkInOpen") == true) button("Close today's attendance") { runAction {
-                api.json("/events/${daily.getString("id")}", "PATCH", JSONObject().put("checkInOpen", false))
-                renderDashboard(); showMessage("Today's attendance is closed.")
-            } }
+        val allEvents = (0 until eventResponse.length()).map { eventResponse.getJSONObject(it) }
+        val today = allEvents.filter { it.optString("date") == Workday.date() }
+        val uid = employee.optString("uid")
+        if (history != null) for (i in 0 until history.length()) {
+            val record = history.getJSONObject(i)
+            if (record.optString("uid") == uid) savedReceipts["$uid:${record.optString("eventId")}"] = record
         }
-        if (AttendancePolicyState.current.onsiteRequired) {
-            heading("Required attendance Wi-Fi")
-            text("Connect to ${WifiRule.REQUIRED_SSID} before marking attendance. The app checks the connected network immediately before submission. It does not save or enter the Wi-Fi password.", 14f)
-            button("Open Android Wi-Fi settings") { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) }
-            button("Check attendance Wi-Fi connection") { runAction {
-                AttendanceWifi.requireConnected(this)
-                showMessage("Connected to the required Wi-Fi. Location, passkey and room-code checks still apply.")
-            } }
+        val receipts = savedReceipts.values.filter { it.optString("uid") == uid }.map { record ->
+            ReceiptRecord(uid, record.optString("eventId"), record.optString("timestamp"), record.optString("attendanceMode", "legacy"),
+                record.optJSONObject("verification")?.optString("method") == "passkey-user-verification",
+                record.optJSONObject("wifi")?.let { it.optString("ssid") == WifiRule.REQUIRED_SSID && it.optString("verification") == "native-client-observation" } == true)
         }
-        heading("Biometric / passkey attendance")
-        text("Your phone verifies you using a passkey. Depending on Android settings, this can use a fingerprint, face or device PIN. The app receives a signed proof, never your biometric template.", 13f)
-        text(if (!biometricConfigured) "Passkey setup is incomplete on the server. Contact the administrator." else if (registeredPasskey) "Passkey enrolled. Verify with it each time you mark attendance." else "Enroll a passkey before your first attendance check-in.", 14f)
-        button("Enroll phone passkey") { runAction { enrollPasskey(); renderDashboard(); showMessage("Phone passkey enrolled.") } }.isEnabled = biometricConfigured
-        button("Refresh attendance") { runAction { renderDashboard() } }
-        val picker = Spinner(this)
-        picker.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("Select an open event") + events.map { it.optString("title") + " · " + it.optString("date") })
-        picker.contentDescription = "Attendance event"
-        content.addView(picker, LinearLayout.LayoutParams(-1, dp(54)))
+        val todayReceipts = EmployeePresentation.receipts(uid, today.map { it.optString("id") }.toSet(), receipts)
+        val sessions = today.filter { it.optBoolean("checkInOpen") || todayReceipts.containsKey(it.optString("id")) }
         val onsite = AttendancePolicyState.current.onsiteRequired
-        val roomCode = if (onsite && venue?.optBoolean("requiresRoomCode", true) != false) input("Current room code").apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER } else null
-        val checkinConsent = CheckBox(this).apply {
-            text = if (onsite) "I agree to save my location, accuracy and time for this attendance check-in." else "I confirm I am marking my own attendance. Physical location is not verified in setup mode."
-            setPadding(0, dp(8), 0, dp(8)); content.addView(this)
-        }
-        button("Verify phone and mark attendance") {
-            if (!checkinConsent.isChecked) { showMessage("Read and confirm the attendance statement first."); return@button }
-            val selected = picker.selectedItemPosition - 1
-            if (selected !in events.indices) { showMessage("Select an open event."); return@button }
-            if (!registeredPasskey || !biometricConfigured) { showMessage("Enroll a phone passkey first."); return@button }
-            val submit: () -> Unit = { runAction {
-                if (onsite) AttendanceWifi.requireConnected(this)
-                val event = events[selected]
-                val location = if (onsite) LocationAccess.current(this) else null
-                val proof = verifyPasskey(event.getString("id"))
-                val body = JSONObject().put("eventId", event.getString("id")).put("biometricProof", proof)
-                if (location != null) body.put("location", LocationAccess.point(location))
-                roomCode?.let { body.put("roomCode", it.text.toString().trim()) }
-                val response = api.json("/attendance", "POST", body)
-                checkinConsent.isChecked = false; roomCode?.text?.clear()
-                renderDashboard()
-                showMessage(if (response.optBoolean("alreadyMarked")) "Your attendance was already recorded. The first record was preserved." else if (onsite) "Attendance recorded with phone user verification and location." else "Attendance recorded in setup mode. Physical location was not verified.")
-            } }
-            if (onsite) requestPermissionsThen(false, submit) else submit()
-        }
-        heading("Workday location sharing")
-        text("10:30 AM–8:30 PM, India time. Start each day explicitly. While active, the app records your route, time away from the venue and approximate stops. You and committee members can see the report. The configured retention target is 30 days; ask the committee to confirm deletion policy. A persistent notification includes Stop. GPS uncertainty or missing signals appear as unknown time, not proof that you stayed or left.", 14f)
-        trackingLabel = text(TrackingService.state.value, 14f)
-        val trackingConsent = CheckBox(this).apply {
-            text = "I agree to share my location during today's workday, including places visited away from the venue, for the attendance report. I can stop sharing at any time."
-            setPadding(0, dp(8), 0, dp(8)); content.addView(this)
-        }
-        button("Start today's location sharing") {
-            if (!trackingConsent.isChecked) { showMessage("Read and agree to workday location sharing first."); return@button }
-            if (!Workday.contains()) { showMessage("Tracking can start only from 10:30 AM to 8:30 PM, India time."); return@button }
-            requestPermissionsThen(true) { runAction {
-                if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) throw IllegalStateException("Enable this app's notifications before tracking. Its active status must remain visible.")
-                api.json("/tracking/start", "POST", JSONObject().put("consent", true))
-                ContextCompat.startForegroundService(this, Intent(this, TrackingService::class.java).setAction(TrackingService.ACTION_START))
-                trackingConsent.isChecked = false
-                showMessage("Daily sharing consent saved. The visible location service is starting.")
-            } }
-        }
-        button("Stop location sharing") { runAction {
-            // Local GPS stops immediately; never wait for the network before stopping collection.
-            stopService(Intent(this, TrackingService::class.java))
-            TrackingService.state.value = "Location tracking stopped on this phone."
-            runCatching { api.json("/tracking/stop", "POST", JSONObject()) }.onFailure { showMessage("Sharing stopped on this phone. The server could not be reached; unobserved time will be shown as a gap.") }.onSuccess { showMessage("Location sharing stopped.") }
+        val model = EmployeeDashboardModel(
+            employee.optString("fullName"), employee.optString("email"), employee.optString("department"), employee.optString("team"),
+            session?.optJSONObject("venue")?.optString("address") ?: "2nd floor, Srivari Arcade, Bengaluru",
+            onsite, session?.optJSONObject("venue")?.optBoolean("requiresRoomCode", true) != false,
+            registeredPasskey, biometricConfigured, sessions.map { DashboardSession(it.getString("id"), it.optString("title"), it.optString("date")) }, todayReceipts,
+            if (!onsite) "Not required" else if (runCatching { VenueAccessState.current() }.isSuccess) "Confirmed now" else "Not confirmed",
+            if (!onsite) "Not required" else if (runCatching { AttendanceWifi.requireConnected(this) }.isSuccess) "Connected now" else "Not confirmed",
+            TrackingService.state.value, employee.optBoolean("canViewAllAttendance"), employee.optString("role") == "committee", preferredAttendanceSession)
+        val screen = EmployeeDashboardScreen(this, model, EmployeeDashboardActions(
+            onRefresh = { runAction { renderDashboard() } },
+            onEnroll = { runAction { enrollPasskey(); renderDashboard(); showMessage("Phone passkey enrolled.") } },
+            onSubmit = { eventId, consent, code -> submitAttendance(eventId, consent, code) },
+            onViewAttendance = { runAction { renderAttendanceReport() } },
+            onHrControls = { renderHrControls(allEvents) },
+            onStartSharing = { consent -> startDailySharing(consent) },
+            onStopSharing = { runAction { stopService(Intent(this, TrackingService::class.java)); TrackingService.state.value = "Location sharing stopped on this phone."; runCatching { api.json("/tracking/stop", "POST", JSONObject()) }.onFailure { showMessage("Sharing stopped on this phone. The server could not be reached.") } } },
+            onMovementReport = { runAction { showReport(api.json("/tracking/report?date=${Workday.date()}")) } },
+            onSignOut = { signOutAccount() },
+            onMaps = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) },
+            onCheckWifi = { runAction { AttendanceWifi.requireConnected(this); renderDashboard(); showMessage("Connected to venue Wi-Fi at this check. It is checked again on submission.") } }
+        ))
+        dashboardScreen = screen; viewerScreen = null
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage)
+    }
+    private fun submitAttendance(eventId: String, consent: Boolean, roomCode: String) {
+        if (!consent) { showMessage("Confirm the attendance statement first."); return }
+        if (!registeredPasskey || !biometricConfigured) { showMessage("Enroll a phone passkey first."); return }
+        val onsite = AttendancePolicyState.current.onsiteRequired
+        val submit: () -> Unit = { runAction {
+            if (onsite) AttendanceWifi.requireConnected(this)
+            val proof = verifyPasskey(eventId)
+            // Obtain the point after the OS prompt; an old pre-prompt fix may expire.
+            val location = if (onsite) LocationAccess.current(this) else null
+            val body = JSONObject().put("eventId", eventId).put("biometricProof", proof)
+            if (location != null) body.put("location", LocationAccess.point(location))
+            if (onsite) body.put("roomCode", roomCode)
+            val response = api.json("/attendance", "POST", body)
+            val record = response.getJSONObject("attendance")
+            savedReceipts["${record.optString("uid")}:$eventId"] = record
+            preferredAttendanceSession = eventId
+            try { renderDashboard() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                showRecordedReceipt(record)
+            }
         } }
-        button("View today's movement report") { runAction { showReport(api.json("/tracking/report?date=${Workday.date()}")) } }
-        button("Refresh events and passkey status") { runAction { renderDashboard() } }
-        button("Sign out") { runAction {
-            stopService(Intent(this, TrackingService::class.java))
-            TrackingService.state.value = "Tracking stopped. Signed out."
-            runCatching { api.json("/tracking/stop", "POST", JSONObject()) }
-            auth.signOut(); session = null; renderLogin()
+        if (onsite) requestPermissionsThen(false, submit) else submit()
+    }
+    private fun showRecordedReceipt(record: JSONObject) {
+        layout(); heading("Attendance recorded")
+        val firstTime = runCatching { DateTimeFormatter.ofPattern("d MMM yyyy · h:mm:ss a 'IST'").withZone(Workday.zone).format(Instant.parse(record.optString("timestamp"))) }.getOrDefault("Original record time unavailable")
+        text("Original check-in: $firstTime")
+        text(if (record.optString("attendanceMode") == "setup") "Setup check-in · location not verified." else "Your original attendance record is preserved.")
+        text("Your check-in succeeded. The dashboard could not refresh; retry when connected.")
+        button("Refresh attendance") { runAction { renderDashboard() } }
+    }
+    private fun startDailySharing(consent: Boolean) {
+        if (!consent) { showMessage("Read and agree to workday location sharing first."); return }
+        if (!Workday.contains()) { showMessage("Sharing can start only from 10:30 AM to 8:30 PM, India time."); return }
+        requestPermissionsThen(true) { runAction {
+            if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) throw IllegalStateException("Enable notifications before starting sharing so its active status stays visible.")
+            api.json("/tracking/start", "POST", JSONObject().put("consent", true))
+            ContextCompat.startForegroundService(this, Intent(this, TrackingService::class.java).setAction(TrackingService.ACTION_START))
+            showMessage("Daily consent saved. The visible location service is starting.")
         } }
-        text("Location sampling is approximately once a minute, not exact continuous observation. Force-stop, battery restrictions, no network, disabled GPS or revoked permissions cause gaps. The app does not auto-start at boot or secretly restart tracking.", 13f)
+    }
+    private fun signOutAccount() { runAction {
+        stopService(Intent(this, TrackingService::class.java)); TrackingService.state.value = "Tracking stopped. Signed out."
+        if (session?.optJSONObject("user")?.optString("role") != "attendance-viewer") runCatching { api.json("/tracking/stop", "POST", JSONObject()) }
+        auth.signOut(); session = null; savedReceipts.clear(); preferredAttendanceSession = ""; renderLogin()
+    } }
+    private fun renderHrControls(allEvents: List<JSONObject>) {
+        if (!venueUnlocked || session?.optJSONObject("user")?.optString("role") != "committee") return
+        layout(); heading("HR controls")
+        button("Back to my attendance") { runAction { renderDashboard() } }
+        button("Review employee approval requests") { runAction { showEmployeeRequests(api.array("/registration-requests"), api.array("/employees")) } }
+        val daily = allEvents.firstOrNull { it.optString("date") == Workday.date() && it.optString("title") == "Daily employee attendance" }
+        button("Open today's attendance") { runAction {
+            val latest = api.array("/events"); val today = Workday.date()
+            val existing = (0 until latest.length()).map { latest.getJSONObject(it) }.firstOrNull { it.optString("date") == today && it.optString("title") == "Daily employee attendance" }
+            val event = existing ?: api.json("/events", "POST", JSONObject().put("title", "Daily employee attendance").put("date", today).put("isMandatory", true))
+            api.json("/events/${event.getString("id")}", "PATCH", JSONObject().put("checkInOpen", true))
+            renderDashboard(); showMessage("Today's attendance is open.")
+        } }
+        if (daily?.optBoolean("checkInOpen") == true) button("Close today's attendance") { runAction {
+            api.json("/events/${daily.getString("id")}", "PATCH", JSONObject().put("checkInOpen", false))
+            renderDashboard(); showMessage("Today's attendance is closed.")
+        } }
     }
 
     private fun showEmployeeRequests(requests: org.json.JSONArray, employees: org.json.JSONArray) {
@@ -422,67 +467,18 @@ class MainActivity : FragmentActivity() {
     private suspend fun renderAttendanceReport(date: String = Workday.date(), eventId: String = "") {
         val report = api.json("/attendance-report?date=${Uri.encode(date)}${if (eventId.isNotBlank()) "&eventId=${Uri.encode(eventId)}" else ""}")
         if (!venueUnlocked) return
-        layout(); heading("Everyone's attendance")
-        text("Read-only records · India time. This view does not disclose movement history or GPS coordinates.", 14f)
-        text("Loaded report: ${report.optString("date")}. Refresh applies date and session changes.", 13f)
-        val dateInput = input("Attendance date (YYYY-MM-DD)").apply { setText(date) }
-        val events = report.getJSONArray("events")
-        val sessions = (0 until events.length()).map { events.getJSONObject(it) }
-        val picker = Spinner(this).apply {
-            contentDescription = "Attendance session"
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("All sessions on this date") + sessions.map { it.optString("title") })
-            setSelection((sessions.indexOfFirst { it.optString("id") == eventId } + 1).coerceAtLeast(0))
-        }
-        content.addView(picker)
-        button("Refresh attendance records") { runAction {
-            val selected = picker.selectedItemPosition - 1
-            val selectedId = if (dateInput.text.toString() == date && selected in sessions.indices) sessions[selected].optString("id") else ""
-            renderAttendanceReport(dateInput.text.toString().trim(), selectedId)
-        } }
-        val totals = report.getJSONObject("totals")
-        text("${totals.optInt("accounts")} accounts · ${totals.optInt("marked")} marked · ${totals.optInt("notMarked")} not marked yet")
-        text("Includes current approved registered accounts and recorded check-ins for this date. Unregistered roster entries are excluded. Not marked yet is not an absence or leave decision. With all sessions selected, any session check-in counts as marked.", 13f)
-        if (sessions.isEmpty()) text("No attendance session exists for this date.")
-        val query = input("Search name, email, department or team")
-        val onlyMarked = CheckBox(this).apply { text = "Show only marked attendance"; content.addView(this) }
-        text("Refresh to retrieve new check-ins. Attendance CSV export is available in the web dashboard.", 13f)
-        button("Back to dashboard") { runAction { renderDashboard() } }
-        val rows = report.getJSONArray("rows")
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; content.addView(this) }
-        val format = DateTimeFormatter.ofPattern("h:mm:ss a").withZone(Workday.zone)
-        fun drawRows() {
-            list.removeAllViews(); var count = 0
-            val search = query.text.toString().lowercase()
-            for (i in 0 until rows.length()) {
-                val row = rows.getJSONObject(i)
-                if (!listOf("name", "email", "department", "team").joinToString(" ") { row.optString(it) }.lowercase().contains(search) || (onlyMarked.isChecked && row.optString("status") != "marked")) continue
-                count++
-                val description = StringBuilder(row.optString("name").ifBlank { row.optString("email") }).append('\n').append(row.optString("email"))
-                    .append("\n${row.optString("department")} · ${row.optString("team")}")
-                    .append(if (row.optString("status") == "marked") "\nMarked" else "\nNot marked yet")
-                val checks = row.getJSONArray("checkIns")
-                for (n in 0 until checks.length()) {
-                    val check = checks.getJSONObject(n)
-                    val time = runCatching { format.format(Instant.parse(check.optString("timestamp"))) }.getOrDefault("Time unavailable")
-                    description.append("\n${check.optString("eventTitle")} · $time")
-                    if (check.optString("attendanceMode") == "setup") description.append("\nSetup check-in · location not verified")
-                    else if (check.optString("method") == "committee") description.append("\nCommittee override")
-                }
-                list.addView(TextView(this).apply { text = description; textSize = 15f; setPadding(0, dp(12), 0, dp(12)) })
-            }
-            if (count == 0) list.addView(TextView(this).apply { text = "No accounts match these filters." })
-        }
-        query.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { drawRows() }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        })
-        onlyMarked.setOnCheckedChangeListener { _, _ -> drawRows() }
-        drawRows()
+        val screen = AttendanceViewerScreen(this, report, date, eventId, AttendanceViewerActions(
+            onLoad = { day, event -> runAction { renderAttendanceReport(day, event) } },
+            onBack = { if (session?.optJSONObject("user")?.optString("role") == "attendance-viewer") finish() else runAction { renderDashboard() } },
+            onSignOut = { signOutAccount() }
+        ))
+        viewerScreen = screen; dashboardScreen = null
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage)
     }
     private suspend fun enrollPasskey() {
         if (!venueUnlocked) return
         val options = api.json("/biometrics/registration/options", "POST", JSONObject())
+        restoreAfterPrompt = dashboardScreen != null
         ceremonyInProgress = true
         val response = try {
             CredentialManager.create(this).createCredential(this,
@@ -494,6 +490,7 @@ class MainActivity : FragmentActivity() {
     }
     private suspend fun verifyPasskey(eventId: String): String {
         val options = api.json("/biometrics/authentication/options", "POST", JSONObject().put("eventId", eventId))
+        restoreAfterPrompt = dashboardScreen != null
         ceremonyInProgress = true
         val result = try {
             CredentialManager.create(this).getCredential(this,
