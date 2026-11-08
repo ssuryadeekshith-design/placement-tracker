@@ -5,8 +5,8 @@ const { loadConfig } = require('../config');
 const NOW = Date.parse('2026-11-05T06:00:00Z');
 const observation = overrides => ({ transport: 'wifi', ssid: ATTENDANCE_SSID, observedAt: NOW, ...overrides });
 
-test('the supplied SSID is required by default and configuration contains no Wi-Fi password', () => {
-    const config = loadConfig({});
+test('the supplied SSID is required in onsite mode and configuration contains no Wi-Fi password', () => {
+    const config = loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'true' });
     assert.equal(config.wifi.required, true);
     assert.equal(config.wifi.ssid, 'Shikshavertex_5G');
     assert.deepEqual(config.venue.attendanceWifi, { required: true, ssid: 'Shikshavertex_5G' });

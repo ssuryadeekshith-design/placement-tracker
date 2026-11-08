@@ -174,7 +174,8 @@ function createApp({ db, auth, config, now = Date.now }) {
         if (!validId(eventId)) throw new HttpError(400, 'Select a valid event.');
         if ('email' in req.body || 'uid' in req.body || 'rollNumber' in req.body) throw new HttpError(400, 'You can only mark attendance for your signed-in account.');
         const wifi = checkAttendanceWifi(req.body.wifi, config.wifi, now(), req.ip);
-        const savedLocation = checkLocation(location, config.venue, now());
+        const locationRequired = config.venue.locationRequired !== false;
+        const savedLocation = locationRequired ? checkLocation(location, config.venue, now()) : null;
         const eventRef = db.collection('Events').doc(eventId);
         const logRef = db.collection('AttendanceLogs').doc(digest(`${eventId}:${req.identity.uid}`));
         let attendance;
@@ -196,7 +197,7 @@ function createApp({ db, auth, config, now = Date.now }) {
                 const activeCode = snapshotData(codeSnap);
                 if (typeof roomCode !== 'string' || !/^\d{6}$/.test(roomCode) || !activeCode || activeCode.expiresAt <= now() || !safeEqual(activeCode.hash, hmac(`${eventId}:${roomCode}`, config.cookieSecret))) throw new HttpError(403, 'Enter the current room code shown by the committee. Codes expire after 60 seconds.');
             }
-            const record = { eventId, uid: req.identity.uid, email: req.email, timestamp: new Date(now()).toISOString(), location: savedLocation, method: 'self', venueAddress: config.venue.address, ...(wifi ? { wifi } : {}), ...(biometric ? { verification: biometric.evidence } : {}) };
+            const record = { eventId, uid: req.identity.uid, email: req.email, timestamp: new Date(now()).toISOString(), location: savedLocation, method: 'self', attendanceMode: locationRequired ? 'onsite' : 'setup', locationVerified: locationRequired, venueAddress: savedLocation ? config.venue.address : null, ...(wifi ? { wifi } : {}), ...(biometric ? { verification: biometric.evidence } : {}) };
             if (biometric) transaction.set(biometric.ref, { used: true, usedAt: new Date(now()).toISOString() }, { merge: true });
             transaction.create(logRef, record);
             attendance = { id: logRef.id, ...record };
@@ -219,7 +220,7 @@ function createApp({ db, auth, config, now = Date.now }) {
             const ref = db.collection('AttendanceLogs').doc(digest(`${eventId}:${approved.uid}`));
             const existing = await transaction.get(ref);
             if (existing.exists) { alreadyMarked = true; return; }
-            transaction.create(ref, { eventId, uid: approved.uid, email, method: 'committee', ...(wifi ? { wifi } : {}), markedBy: req.identity.uid, reason: reason.trim(), timestamp: new Date(now()).toISOString(), location: null });
+            transaction.create(ref, { eventId, uid: approved.uid, email, method: 'committee', attendanceMode: config.venue.locationRequired === false ? 'setup' : 'onsite', locationVerified: false, ...(wifi ? { wifi } : {}), markedBy: req.identity.uid, reason: reason.trim(), timestamp: new Date(now()).toISOString(), location: null });
         });
         res.json({ success: true, alreadyMarked });
     }));

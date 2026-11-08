@@ -1,3 +1,9 @@
+let accessRequired = true;
+export function isSetupPolicy(venue) {
+  return venue?.attendanceMode === 'setup' && venue?.accessRequired === false && venue?.locationRequired === false && venue?.attendanceWifi?.required === false && venue?.requiresRoomCode === false;
+}
+export function setVenuePolicy(venue) { accessRequired = !isSetupPolicy(venue); }
+export function isVenueRequired() { return accessRequired; }
 let location = null;
 let token = null;
 let expiresAt = 0;

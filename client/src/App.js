@@ -58,6 +58,7 @@ function CheckIn({ events, logs, venue, onRefresh, busy, setBusy, setError, setN
   const selected = available.find(event => event.id === eventId);
   const requiresRoomCode = venue?.requiresRoomCode !== false;
   const wifiRequired = venue?.attendanceWifi?.required === true;
+  const locationRequired = venue?.locationRequired !== false;
   const verification = useAttendanceVerification({ setError, setNotice, setBusy });
 
   async function markAttendance(event) {
@@ -67,15 +68,18 @@ function CheckIn({ events, logs, venue, onRefresh, busy, setBusy, setError, setN
     setBusy(true); setError(''); setNotice('');
     try {
       const biometricProof = await verification.verify(eventId);
-      if (!navigator.geolocation) throw new Error('Location is unavailable in this browser. Use a browser with location support.');
-      const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject,
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }));
+      let position = null;
+      if (locationRequired) {
+        if (!navigator.geolocation) throw new Error('Location is unavailable in this browser. Use a browser with location support.');
+        position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject,
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }));
+      }
       await api.post('/attendance', {
         eventId,
-        location: {
+        ...(position ? { location: {
           latitude: position.coords.latitude, longitude: position.coords.longitude,
           accuracyMeters: position.coords.accuracy, capturedAt: position.timestamp,
-        },
+        } } : {}),
         ...(requiresRoomCode ? { roomCode: roomCode.trim() } : {}),
         ...(biometricProof ? { biometricProof } : {}),
       });
@@ -94,8 +98,8 @@ function CheckIn({ events, logs, venue, onRefresh, busy, setBusy, setError, setN
 
   return <section className="card check-in-card">
     <div className="section-heading"><div className="icon-box"><MapPin size={24} aria-hidden="true" /></div>
-      <div><h2>Mark your attendance</h2><p>Be at the venue before checking in.</p></div></div>
-    {!venue?.configured && <p className="callout">Self check-in is unavailable until the venue location has been configured by the administrator.</p>}
+      <div><h2>Mark your attendance</h2><p>{locationRequired ? 'Be at the venue before checking in.' : 'Setup mode: self check-in without location verification.'}</p></div></div>
+    {locationRequired && !venue?.configured && <p className="callout">Self check-in is unavailable until the venue location has been configured by the administrator.</p>}
     {wifiRequired && <p className="callout">Attendance requires Wi-Fi <strong>{venue.attendanceWifi.ssid}</strong>. Use the Android app to mark attendance; this browser cannot verify the connected network name.</p>}
     <PhoneVerification verification={verification} busy={busy} />
     <form onSubmit={markAttendance}>
@@ -109,12 +113,12 @@ function CheckIn({ events, logs, venue, onRefresh, busy, setBusy, setError, setN
           inputMode="numeric" autoComplete="off" placeholder="Code displayed inside the room" required disabled={busy} />
         <p className="field-help">Ask the committee for the current code on the second floor. Codes expire after 60 seconds.</p></>}
       <label className="checkbox consent"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} disabled={busy} />
-        <span>I agree to share and store my location for this check-in. The app records my coordinates, accuracy, and check-in time only when I press the button below.</span></label>
-      <button className="primary full-width" type="submit" disabled={busy || wifiRequired || !consent || !selected || !venue?.configured || !verification.ready}>
-        <MapPin size={18} aria-hidden="true" /> {busy ? 'Checking your location…' : 'Check location & mark attendance'}
+        <span>{locationRequired ? 'I agree to share and store my location for this check-in. The app records my coordinates, accuracy, and check-in time only when I press the button below.' : 'I confirm I am marking my own attendance. This setup check-in does not verify my physical location.'}</span></label>
+      <button className="primary full-width" type="submit" disabled={busy || wifiRequired || !consent || !selected || (locationRequired && !venue?.configured) || !verification.ready}>
+        <MapPin size={18} aria-hidden="true" /> {busy ? 'Recording attendance…' : locationRequired ? 'Check location & mark attendance' : 'Mark attendance'}
       </button>
     </form>
-    <p className="field-help">Location requires HTTPS (or localhost during development). Your browser will ask for permission. GPS checks proximity to the building; it cannot reliably identify a floor or prevent a spoofed location.</p>
+    {locationRequired && <p className="field-help">Location requires HTTPS (or localhost during development). Your browser will ask for permission. GPS checks proximity to the building; it cannot reliably identify a floor or prevent a spoofed location.</p>}
   </section>;
 }
 
@@ -185,8 +189,9 @@ function History({ logs, events, committee = false }) {
   return !logs.length ? <p className="empty-state">No attendance recorded yet.</p> : <div className="history-list">{logs.map((log, index) => <article className="history-row" key={log.id || `${log.eventId}-${log.uid || index}`}>
     <CheckCircle size={20} aria-hidden="true" /><div><strong>{events.find(event => event.id === log.eventId)?.title || 'Event'}</strong>
       {committee && <p>{log.email || log.rollNumber || 'Attendee'}</p>}
-      <p>{displayDate(log.timestamp)} · {['manual', 'committee'].includes(log.method) ? 'Committee override' : 'Present'}</p>
+      <p>{displayDate(log.timestamp)} · {['manual', 'committee'].includes(log.method) ? 'Committee override' : log.attendanceMode === 'setup' ? 'Self-reported attendance' : 'Present'}</p>
       {committee && log.reason && <p className="field-help">Override reason: {log.reason}</p>}
+      {log.attendanceMode === 'setup' && <p className="field-help">Setup check-in · location not verified</p>}
       {log.location && <p className="field-help">Location: {log.location.latitude}, {log.location.longitude} · accuracy ±{Math.round(log.location.accuracyMeters)} m</p>}
     </div><span className="badge">Present</span>
   </article>)}</div>;
@@ -305,7 +310,7 @@ function AccountApp() {
                 <DailyReport key={session.user.uid} user={session.user} />
                 {committee && <EmployeeAdministration />}
                 {committee && <Committee venue={session.venue} events={events} logs={summary.logs} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} />}
-                <p className="privacy-note"><ShieldCheck size={17} aria-hidden="true" />This browser is registered to {session.user.email}. This website checks location while open to keep venue access unlocked. A check-in saves its own location. Daily movement tracking requires separate consent in the Android app. Signing out keeps the browser binding.</p></>}
+                <p className="privacy-note"><ShieldCheck size={17} aria-hidden="true" />This browser is registered to {session.user.email}. {session.venue?.locationRequired === false ? 'Setup check-ins do not collect or verify your location.' : 'This website checks location while open to keep venue access unlocked. A check-in saves its own location.'} Daily movement tracking requires separate consent in the Android app. Signing out keeps the browser binding.</p></>}
     </main><footer>TPAC · Shiksha Vertex Attendance</footer>
   </div>;
 }

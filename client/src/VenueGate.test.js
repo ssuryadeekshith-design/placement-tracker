@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import VenueGate, { evaluateVenue } from './VenueGate';
 import api from './api';
-import { clearVenueAccess } from './venueAccess';
+import { clearVenueAccess, isVenueRequired } from './venueAccess';
 
 jest.mock('./api', () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn() } }));
 jest.mock('./firebase', () => ({ auth: null }));
@@ -65,4 +65,23 @@ test('geofence includes uncertainty and rejects invalid, inaccurate or old coord
   expect(evaluateVenue(position({ accuracy: 51 }), venue)).toBe(false);
   expect(evaluateVenue({ ...position(), timestamp: Date.now() - 15001 }, venue)).toBe(false);
   expect(evaluateVenue(position({ latitude: 91 }), venue)).toBe(false);
+});
+
+test('explicit setup mode opens without any location permission and explains unverified presence', async () => {
+  api.get.mockResolvedValue({ data: { ...venue, attendanceMode: 'setup', accessRequired: false, locationRequired: false, attendanceWifi: { required: false }, requiresRoomCode: false } });
+  const { unmount } = render(<VenueGate><div>Private attendance content</div></VenueGate>);
+  expect(await screen.findByText('Private attendance content')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('does not verify physical presence');
+  expect(navigator.geolocation.watchPosition).not.toHaveBeenCalled();
+  expect(isVenueRequired()).toBe(false);
+  unmount();
+  expect(isVenueRequired()).toBe(true);
+});
+
+test('missing, incomplete or failed policy cannot silently enable setup mode', async () => {
+  api.get.mockResolvedValue({ data: { attendanceMode: 'setup', accessRequired: false } });
+  render(<VenueGate><div>Private attendance content</div></VenueGate>);
+  await waitFor(() => expect(api.get).toHaveBeenCalledWith('/venue'));
+  expect(screen.queryByText('Private attendance content')).not.toBeInTheDocument();
+  expect(isVenueRequired()).toBe(true);
 });

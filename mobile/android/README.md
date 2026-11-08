@@ -4,6 +4,12 @@ A native Android companion to the same authenticated attendance API. Package nam
 
 This app is not a hidden tracker. It never starts location tracking at boot, cannot collect before consent, does not restart collection after a process kill, and has a persistent notification with **Stop sharing location**. It requests precise location and notification permissions before starting. The local collector and server accept tracking only **10:30 AM–8:30 PM Asia/Kolkata**; there is no collection before or after that workday window. A user must start each day themselves from the visible app. Force-stop, lost connectivity, Android power management, switched-off GPS or revoked permissions produce gaps. Do not promise uninterrupted tracking on every Android handset.
 
+## Temporary setup mode
+
+Version 1.1 reads the backend's explicit policy before opening account screens. Setup mode skips venue monitoring, location permission, Wi-Fi and room-code checks for attendance. Email verification, HR approval and phone passkeys still apply. HR can open/close today's daily attendance from the phone. Check-ins are labelled as location-unverified. Daily location sharing remains opt-in and separate. See [deployment and APK transfer steps](../../docs/temporary-setup-mode.md). Older APKs must be updated.
+
+The following venue/Wi-Fi requirements apply after `ENFORCE_ONSITE_ATTENDANCE=true` is deployed on the backend.
+
 ## Venue access lock
 
 The app opens a locked shell until it receives a new precise inside position. Before showing login, attendance or reports it checks the owner-confirmed pin (12.912773610440954, 77.62322878099566), a 100 m radius, maximum 50 m uncertainty and maximum 15-second fix age. The full accuracy circle must fit inside the radius. Out-of-area, inaccurate, stale, unavailable, denied or known mock positions leave it locked. Foreground location checks run roughly every five seconds and stop when the Activity pauses. Returning requires a new fix. These checks do not start daily background tracking.

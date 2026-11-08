@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { auth } from './firebase';
-import { ensureVenueAccess, currentVenueLocation, venueRevision, clearVenueAccess } from './venueAccess';
+import { ensureVenueAccess, currentVenueLocation, venueRevision, clearVenueAccess, isVenueRequired } from './venueAccess';
 
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL || '/api',
@@ -15,7 +15,7 @@ api.interceptors.request.use(async (config) => {
   if (auth?.currentUser) {
     config.headers.Authorization = `Bearer ${await auth.currentUser.getIdToken()}`;
   }
-  if (interactive(config)) {
+  if (interactive(config) && isVenueRequired()) {
     config.venueRevision = venueRevision();
     config.headers['X-Venue-Access'] = await ensureVenueAccess(api);
   }
@@ -23,7 +23,7 @@ api.interceptors.request.use(async (config) => {
 });
 
 api.interceptors.response.use(response => {
-  if (interactive(response.config)) {
+  if (interactive(response.config) && isVenueRequired()) {
     currentVenueLocation();
     if (response.config.venueRevision !== venueRevision()) throw new Error('Venue access was locked.');
   }

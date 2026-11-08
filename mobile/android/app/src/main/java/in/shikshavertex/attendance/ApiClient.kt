@@ -29,15 +29,29 @@ class ApiClient(context: Context) {
     suspend fun json(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = JSONObject(request(path, method, body))
     suspend fun array(path: String): JSONArray = JSONArray(request(path))
 
+    suspend fun loadPolicy(): AttendancePolicy = withContext(Dispatchers.IO) {
+        val connection = URL("$base/venue").openConnection() as HttpURLConnection
+        connection.instanceFollowRedirects = false
+        connection.connectTimeout = 15000
+        connection.readTimeout = 20000
+        try {
+            if (connection.responseCode != 200) throw IllegalStateException("Could not load attendance settings. Retry in a moment; the service may be waking up.")
+            val venue = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            fun flag(json: JSONObject?, key: String): Boolean? = json?.opt(key) as? Boolean
+            AttendancePolicy.fromFlags(venue.optString("attendanceMode"), flag(venue, "accessRequired"),
+                flag(venue, "locationRequired"), flag(venue.optJSONObject("attendanceWifi"), "required"), flag(venue, "requiresRoomCode"))
+        } finally { connection.disconnect() }
+    }
+
     private fun needsVenue(path: String): Boolean = path.substringBefore('?') !in setOf("/registration/request", "/registration/status", "/session", "/me", "/access/verify", "/access/lock", "/tracking/status", "/tracking/points", "/tracking/stop")
 
     private suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): String {
         require(path.startsWith('/') && !path.startsWith("//"))
         val user = FirebaseAuth.getInstance().currentUser ?: throw ApiException(401, "Sign in first.")
         if (!user.isEmailVerified) throw ApiException(403, "Verify your email before continuing.")
-        val attendance = path.substringBefore('?') in setOf("/attendance", "/attendance/manual")
+        val attendance = AttendancePolicyState.current.onsiteRequired && path.substringBefore('?') in setOf("/attendance", "/attendance/manual")
         if (attendance) AttendanceWifi.requireConnected(applicationContext)
-        val interactive = needsVenue(path)
+        val interactive = AttendancePolicyState.current.onsiteRequired && needsVenue(path)
         val generation = VenueAccessState.generation
         var accessToken: String? = null
         if (interactive) {
