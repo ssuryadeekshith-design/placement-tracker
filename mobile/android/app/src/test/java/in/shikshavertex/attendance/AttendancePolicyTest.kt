@@ -4,8 +4,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AttendancePolicyTest {
-    @Test fun setupExplicitlyDisablesAllVenueChecks() {
-        assertFalse(AttendancePolicy.fromFlags("setup", false, false, false, false).onsiteRequired)
+    @Test fun retiredSetupFlagsCannotDisableAttendanceChecks() {
+        assertTrue(AttendancePolicy.fromFlags("setup", false, false, false, false).onsiteRequired)
     }
     @Test fun missingOrInconsistentPolicyKeepsVenueChecks() {
         assertTrue(AttendancePolicy().onsiteRequired)

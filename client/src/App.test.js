@@ -45,24 +45,8 @@ async function dashboard() {
 }
 function fillCheckIn() {
   fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'drive-1' } });
-  fireEvent.change(screen.getByLabelText('Room code'), { target: { value: '123456' } });
   fireEvent.click(screen.getByRole('checkbox', { name: /I agree to share and store my location/ }));
 }
-
-test('setup check-in sends phone verification without requesting GPS or a room code', async () => {
-  mockBiometrics = { required: true, configured: true, registered: true };
-  const setupVenue = { ...venue, attendanceMode: 'setup', accessRequired: false, locationRequired: false, requiresRoomCode: false, attendanceWifi: { required: false } };
-  api.post.mockImplementation(path => Promise.resolve({ data: path === '/session' ? { user: { uid: 'u1', email: mockUser.email, role: 'student' }, venue: setupVenue } : path === '/biometrics/authentication/options' ? { challengeId: 'challenge', options: {} } : path === '/biometrics/authentication/verify' ? { verified: true, proof: 'verified-proof' } : receiptResponse() }));
-  startAuthentication.mockResolvedValue({ id: 'phone' });
-  await dashboard();
-  expect(screen.queryByLabelText('Room code')).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'drive-1' } });
-  fireEvent.click(screen.getByRole('checkbox', { name: /I confirm I am marking my own attendance/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Mark attendance', exact: true }));
-  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/attendance', { eventId: 'drive-1', biometricProof: 'verified-proof' }));
-  expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
-  expect(startAuthentication).toHaveBeenCalled();
-});
 
 test('shows setup guidance when Firebase is not configured', () => {
   firebaseConfig.firebaseConfigured = false;
@@ -100,38 +84,7 @@ test('does not request location on login and requires consent before check-in', 
   expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Check location & mark attendance' })).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'drive-1' } });
-  fireEvent.change(screen.getByLabelText('Room code'), { target: { value: '123456' } });
   expect(screen.getByRole('button', { name: 'Check location & mark attendance' })).toBeDisabled();
-});
-
-test('captures a fresh position after consent and submits self attendance', async () => {
-  await dashboard(); fillCheckIn();
-  const timestamp = Date.now();
-  navigator.geolocation.getCurrentPosition.mockImplementation(success => success({ coords: { latitude: 12.9, longitude: 77.6, accuracy: 12 }, timestamp }));
-  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
-  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/attendance', {
-    eventId: 'drive-1', roomCode: '123456', location: { latitude: 12.9, longitude: 77.6, accuracyMeters: 12, capturedAt: timestamp },
-  }));
-  expect(navigator.geolocation.getCurrentPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
-  expect(await screen.findByText('Attendance recorded successfully.')).toHaveAttribute('role', 'status');
-  expect(screen.getByRole('checkbox')).not.toBeChecked();
-});
-
-test('denied geolocation shows an actionable message and does not mark attendance', async () => {
-  await dashboard(); fillCheckIn();
-  navigator.geolocation.getCurrentPosition.mockImplementation((success, failure) => failure({ code: 1 }));
-  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Location permission was denied');
-  expect(api.post).not.toHaveBeenCalledWith('/attendance', expect.anything());
-});
-
-test('a rejected geofence or room code is shown instead of success', async () => {
-  await dashboard(); fillCheckIn();
-  navigator.geolocation.getCurrentPosition.mockImplementation(success => success({ coords: { latitude: 12.9, longitude: 77.6, accuracy: 12 }, timestamp: Date.now() }));
-  api.post.mockRejectedValueOnce({ response: { data: { error: 'You are outside the venue radius.' } } });
-  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('You are outside the venue radius.');
-  expect(screen.queryByText('Attendance recorded successfully.')).not.toBeInTheDocument();
 });
 
 test('a device binding rejection prevents attendance access', async () => {
@@ -160,74 +113,6 @@ test('verified refresh establishes a session only after reloading verification s
   expect(await screen.findByRole('heading', { name: 'Mark your attendance' })).toBeInTheDocument();
   expect(mockUser.getIdToken).toHaveBeenCalledWith(true);
   expect(api.post).toHaveBeenCalledWith('/session');
-});
-
-test('committee can display a temporary room code and record an audited override without GPS', async () => {
-  api.post.mockImplementation(path => Promise.resolve({ data: path === '/session'
-    ? { user: { uid: 'u1', email: mockUser.email, role: 'committee' }, venue }
-    : path.endsWith('/room-code') ? { code: '654321', expiresAt: Date.now() + 60000 } : { success: true, alreadyMarked: false } }));
-  api.get.mockImplementation(path => Promise.resolve({ data: path === '/biometrics' ? mockBiometrics : path === '/events' ? [{ ...event, date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) }] : path === '/students'
-    ? [{ uid: 'u2', email: 'other@shikshavertex.in', fullName: 'Another Employee', attendanceEligible: true }]
-    : { logs: [{ id: 'l1', eventId: 'drive-1', uid: 'u2', email: 'other@shikshavertex.in', timestamp: Date.now(), method: 'committee', reason: 'Phone unavailable' }], mandatoryCount: 1 } }));
-  await dashboard();
-  // Another attendee's record must not hide the committee member's own check-in.
-  expect(screen.getByRole('option', { name: /Placement workshop ·/ })).toBeInTheDocument();
-  expect(await screen.findByRole('heading', { name: 'HR session controls' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Generate room code' }));
-  expect(await screen.findByText('654321')).toBeInTheDocument();
-  expect(screen.getByText(/Expires in 60s/)).toBeInTheDocument();
-  fireEvent.click(screen.getByText('Committee attendance override'));
-  await within(screen.getByLabelText('Registered employee')).findByRole('option', { name: 'other@shikshavertex.in' });
-  fireEvent.change(screen.getByLabelText('Override event'), { target: { value: 'drive-1' } });
-  fireEvent.change(screen.getByLabelText('Registered employee'), { target: { value: 'other@shikshavertex.in' } });
-  fireEvent.change(screen.getByLabelText('Reason for override'), { target: { value: 'Phone unavailable' } });
-  fireEvent.click(screen.getByRole('checkbox', { name: /I have checked the employee/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Record committee override' }));
-  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/attendance/manual', { eventId: 'drive-1', email: 'other@shikshavertex.in', reason: 'Phone unavailable' }));
-  expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
-  expect(screen.getByText(/Override reason: Phone unavailable/)).toBeInTheDocument();
-  expect(screen.getByText(/Committee override/, { selector: 'p' })).toBeInTheDocument();
-});
-
-
-test('required phone verification supplies a server proof with self attendance', async () => {
-  mockBiometrics = { required: true, configured: true, registered: true };
-  api.post.mockImplementation(path => Promise.resolve({ data: path === '/session'
-    ? { user: { uid: 'u1', email: mockUser.email, role: 'student' }, venue }
-    : path === '/biometrics/authentication/options' ? { challengeId: 'challenge-1', options: { challenge: 'server-challenge' } }
-      : path === '/biometrics/authentication/verify' ? { verified: true, proof: 'server-verified-proof' } : receiptResponse() }));
-  startAuthentication.mockResolvedValue({ id: 'credential-id', response: { signature: 'signed-proof' } });
-  await dashboard(); fillCheckIn();
-  const timestamp = Date.now();
-  navigator.geolocation.getCurrentPosition.mockImplementation(success => success({ coords: { latitude: 12.9, longitude: 77.6, accuracy: 12 }, timestamp }));
-  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
-  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/attendance', {
-    eventId: 'drive-1', roomCode: '123456', biometricProof: 'server-verified-proof', location: { latitude: 12.9, longitude: 77.6, accuracyMeters: 12, capturedAt: timestamp },
-  }));
-  expect(startAuthentication).toHaveBeenCalledWith({ optionsJSON: { challenge: 'server-challenge' } });
-  expect(api.post).toHaveBeenCalledWith('/biometrics/authentication/verify', { challengeId: 'challenge-1', response: { id: 'credential-id', response: { signature: 'signed-proof' } } });
-});
-
-test('cancelled phone verification does not collect location or mark attendance', async () => {
-  mockBiometrics = { required: true, configured: true, registered: true };
-  await dashboard(); fillCheckIn();
-  api.post.mockResolvedValue({ data: { challengeId: 'challenge-1', options: {} } });
-  startAuthentication.mockRejectedValue(Object.assign(new Error('Cancelled'), { name: 'NotAllowedError' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Phone verification was cancelled');
-  expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
-  expect(api.post).not.toHaveBeenCalledWith('/attendance', expect.anything());
-});
-
-test('a missing server phone-verification proof cannot mark attendance', async () => {
-  mockBiometrics = { required: true, configured: true, registered: true };
-  await dashboard(); fillCheckIn();
-  api.post.mockImplementation(path => Promise.resolve({ data: path.endsWith('/options') ? { challengeId: 'challenge-1', options: {} } : { verified: true } }));
-  startAuthentication.mockResolvedValue({ id: 'credential-id' });
-  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Phone verification was not confirmed by the server');
-  expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
-  expect(api.post).not.toHaveBeenCalledWith('/attendance', expect.anything());
 });
 
 test('enrollment registers a passkey before allowing phone-verified check-in', async () => {
@@ -271,7 +156,7 @@ test('required Wi-Fi attendance cannot be marked from a browser that cannot obse
 test('committee browser overrides cannot bypass required Wi-Fi attendance', async () => {
   api.post.mockResolvedValue({ data: { user: { uid: 'u1', email: mockUser.email, role: 'committee' }, venue: { ...venue, attendanceWifi: { required: true, ssid: 'Shikshavertex_5G' } } } });
   await dashboard();
-  expect(await screen.findByText(/Browser committee overrides are unavailable/i)).toBeInTheDocument();
+  expect(await screen.findByText(/Sessions and approvals can be managed from anywhere/i)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Record committee override' })).not.toBeInTheDocument();
 });
 
@@ -326,20 +211,6 @@ test('verification resend has a visible cooldown and never resends automatically
   } finally { jest.useRealTimers(); }
 });
 
-test('a confirmed self check-in retains its receipt and blocks a duplicate when the shared refresh fails', async () => {
-  await dashboard(); fillCheckIn();
-  navigator.geolocation.getCurrentPosition.mockImplementation(success => success({ coords: { latitude: 12.9, longitude: 77.6, accuracy: 12 }, timestamp: Date.now() }));
-  api.get.mockImplementation(path => path === '/events' ? Promise.reject(new Error('Fixture refresh offline')) : Promise.resolve({ data: { logs: [], mandatoryCount: 1 } }));
-  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
-  expect(await screen.findByText(/Attendance saved, but current records could not refresh/)).toBeInTheDocument();
-  expect(screen.getByText('Attendance recorded successfully.')).toBeInTheDocument();
-  const records = screen.getByRole('region', { name: 'Attendance check-in records' });
-  expect(within(records).getByText('Placement workshop')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Check location & mark attendance' })).toBeDisabled();
-  expect(screen.queryByRole('option', { name: /Placement workshop ·/ })).not.toBeInTheDocument();
-  expect(api.post.mock.calls.filter(([path]) => path === '/attendance')).toHaveLength(1);
-});
-
 test('past and future open sessions are not offered for self check-in', async () => {
   const initialGet = api.get.getMockImplementation();
   api.get.mockImplementation(path => path === '/events' ? Promise.resolve({ data: [
@@ -348,4 +219,14 @@ test('past and future open sessions are not offered for self check-in', async ()
   await dashboard();
   expect(screen.getByRole('option', { name: 'No open events to check into' })).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: /Placement workshop ·/ })).not.toBeInTheDocument();
+});
+
+
+test('retired setup flags cannot enable browser check-in or expose old prerequisite wording', async () => {
+  api.post.mockResolvedValue({ data: { user: { uid: 'u1', email: mockUser.email, role: 'student' }, venue: { ...venue, attendanceMode: 'setup', accessRequired: false, locationRequired: false, attendanceWifi: { required: false }, requiresRoomCode: true } } });
+  await dashboard(); fillCheckIn();
+  expect(screen.getByRole('button', { name: 'Check location & mark attendance' })).toBeDisabled();
+  expect(document.body.textContent).not.toMatch(/temporary setup mode|wi-fi|room.?code/i);
+  expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalledWith('/attendance', expect.anything());
 });

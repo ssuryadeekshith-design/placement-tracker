@@ -18,7 +18,7 @@ object AttendanceWifi {
     private var observer: ConnectivityManager.NetworkCallback? = null
     private var observingManager: ConnectivityManager? = null
 
-    // Android 12+ redacts Wi-Fi identifiers unless location-sensitive callback
+    // Android 12+ redacts office connection identifiers unless location-sensitive callback
     // data is explicitly requested and precise-location access is granted.
     fun startObserving(context: Context) {
         if (Build.VERSION.SDK_INT < 31 || observer != null || !LocationAccess.precisePermission(context)) return
@@ -51,7 +51,7 @@ object AttendanceWifi {
         val wifiTransport = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true &&
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == false
         if (!wifiTransport) throw IllegalStateException(WifiRule.rejection(null, false, false))
-        if (!LocationAccess.precisePermission(context)) throw SecurityException("Allow precise location so Android can verify the connected Wi-Fi name.")
+        if (!LocationAccess.precisePermission(context)) throw SecurityException("Allow precise location so Android can confirm the office connection.")
         val manager = context.applicationContext.getSystemService(WifiManager::class.java)
         val info = connectedInfo[network]?.takeIf { WifiRule.normalizeSsid(it.ssid) != null } ?: manager.connectionInfo
         val rejection = WifiRule.rejection(info?.ssid, true, info?.supplicantState == SupplicantState.COMPLETED && info.networkId != -1)

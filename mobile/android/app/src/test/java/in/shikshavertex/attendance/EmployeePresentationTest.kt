@@ -7,14 +7,14 @@ class EmployeePresentationTest {
     private val today = "2026-11-09"
     private fun model() = EmployeeDashboardModel(
         employeeName = "Alex Example", email = "alex@example.com", department = "Operations", team = "Campus",
-        venue = "Sample venue", onsite = false, requiresRoomCode = true, passkeyRegistered = true,
+        venue = "Sample venue", onsite = true, passkeyRegistered = true,
         passkeyConfigured = true, events = listOf(DashboardSession("daily", "Daily attendance", today)),
         receipts = emptyMap(), gpsStatus = "Not required", wifiStatus = "Not required", trackingStatus = "Off",
         canViewAll = false, isHr = false, loadedDate = today)
-    private fun gate(model: EmployeeDashboardModel, session: String? = "daily", consent: Boolean = true, code: String = "") =
-        EmployeePresentation.checkInGate(model, session, consent, code, today = today)
+    private fun gate(model: EmployeeDashboardModel, session: String? = "daily", consent: Boolean = true) =
+        EmployeePresentation.checkInGate(model, session, consent, today = today)
 
-    @Test fun setupModeStillRequiresAPasskeyAndStatementWithoutCollectingLocation() {
+    @Test fun identityAndConsentAreRequiredBeforeTheSubmissionChecks() {
         assertEquals(CheckInGate.READY, gate(model()))
         assertEquals(CheckInGate.STATEMENT_REQUIRED, gate(model(), consent = false))
         assertEquals(CheckInGate.PASSKEY_SETUP, gate(model().copy(passkeyConfigured = false)))
@@ -34,14 +34,10 @@ class EmployeePresentationTest {
         assertEquals(CheckInGate.SESSION_CLOSED, gate(model().copy(events = listOf(DashboardSession("daily", "Closed", today, false)))))
     }
 
-    @Test fun onsiteNeedsLocationWifiAndAnAsciiSixDigitCodeWhenRequired() {
-        val onsite = model().copy(onsite = true)
-        assertEquals(CheckInGate.GPS_REQUIRED, gate(onsite, code = "123456"))
-        assertEquals(CheckInGate.WIFI_REQUIRED, gate(onsite.copy(gpsStatus = "Confirmed now"), code = "123456"))
-        val ready = onsite.copy(gpsStatus = "Confirmed now", wifiStatus = "Connected now")
-        for (code in listOf("", "12345", "1234567", "１２３４５６", "12A456")) assertEquals(CheckInGate.ROOM_CODE_REQUIRED, gate(ready, code = code))
-        assertEquals(CheckInGate.READY, gate(ready, code = "123456"))
-        assertEquals(CheckInGate.READY, gate(ready.copy(requiresRoomCode = false)))
+    @Test fun locationAndConnectionAreCheckedOnSubmitNotByLockingTheDashboard() {
+        val pendingChecks = model().copy(gpsStatus = "Not confirmed", wifiStatus = "Not confirmed")
+        assertEquals(CheckInGate.READY, gate(pendingChecks))
+        assertEquals(CheckInGate.STATEMENT_REQUIRED, gate(pendingChecks, consent = false))
     }
 
     @Test fun aRecordedClosedSessionKeepsItsReceiptWhenRefreshIsUnavailable() {

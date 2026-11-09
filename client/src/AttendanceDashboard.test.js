@@ -16,7 +16,7 @@ beforeEach(() => { jest.clearAllMocks(); api.get.mockImplementation(async url =>
 test('shows check-ins in India time, mode and registered-account totals with no edit controls', async () => {
   render(<AttendanceDashboard />);
   expect(await screen.findByText('Surya')).toBeInTheDocument();
-  expect(screen.getByText('Setup · location not verified')).toBeInTheDocument();
+  expect(screen.getByText('Historical · location not verified')).toBeInTheDocument();
   expect(screen.getByText(/10:40:00/)).toBeInTheDocument();
   expect(screen.getByText('Not marked yet', { selector: 'span' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /approve|override|delete|edit/i })).not.toBeInTheDocument();
@@ -145,7 +145,7 @@ test('manual setup overrides keep their evidence label and missing times stay un
   const records = screen.getByRole('region', { name: 'All-employees attendance records' });
   expect(within(records).getByText('Committee override')).toBeInTheDocument();
   expect(within(records).getByText('Time unavailable')).toBeInTheDocument();
-  expect(within(records).queryByText('Setup · location not verified')).not.toBeInTheDocument();
+  expect(within(records).queryByText('Historical · location not verified')).not.toBeInTheDocument();
   const csv = buildAttendanceCsv(report, [{ ...report.rows[0], checkIns: [{ ...report.rows[0].checkIns[0], timestamp: 'yesterday', locationChecked: undefined }] }]);
   expect(csv).toContain('Unavailable'); expect(csv).not.toMatch(/yesterday|1970|"false"/);
 });

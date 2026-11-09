@@ -6,11 +6,11 @@ data class ReceiptRecord(val uid: String, val eventId: String, val timestamp: St
                          val phoneVerified: Boolean, val venueWifiObserved: Boolean)
 
 enum class CheckInGate { RECORDED, REFRESH_REQUIRED, NO_SESSIONS, PASSKEY_SETUP, PASSKEY_ENROLLMENT,
-    NO_SELECTION, SESSION_CLOSED, GPS_REQUIRED, WIFI_REQUIRED, STATEMENT_REQUIRED, ROOM_CODE_REQUIRED, READY }
+    NO_SELECTION, SESSION_CLOSED, STATEMENT_REQUIRED, READY }
 
 object EmployeePresentation {
     /** These UI prerequisites supplement, and never replace, fresh native and server checks. */
-    fun checkInGate(model: EmployeeDashboardModel, sessionId: String?, consent: Boolean, roomCode: String,
+    fun checkInGate(model: EmployeeDashboardModel, sessionId: String?, consent: Boolean,
                     refreshRequired: Boolean = model.refreshRequired, today: String = Workday.date()): CheckInGate {
         val selected = model.events.find { it.id == sessionId }
         return when {
@@ -21,10 +21,7 @@ object EmployeePresentation {
             !model.passkeyRegistered -> CheckInGate.PASSKEY_ENROLLMENT
             selected == null -> CheckInGate.NO_SELECTION
             !selected.checkInOpen -> CheckInGate.SESSION_CLOSED
-            model.onsite && model.gpsStatus != "Confirmed now" -> CheckInGate.GPS_REQUIRED
-            model.onsite && model.wifiStatus != "Connected now" -> CheckInGate.WIFI_REQUIRED
             !consent -> CheckInGate.STATEMENT_REQUIRED
-            model.onsite && model.requiresRoomCode && !roomCode.matches(Regex("[0-9]{6}")) -> CheckInGate.ROOM_CODE_REQUIRED
             else -> CheckInGate.READY
         }
     }

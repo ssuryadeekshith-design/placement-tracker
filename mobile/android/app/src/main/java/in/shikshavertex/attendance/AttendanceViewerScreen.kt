@@ -168,7 +168,7 @@ class AttendanceViewerScreen(
         if (team !in teams) team = ""
         val departmentPicker = selector(more, "Department", listOf("All departments") + departments, departments.indexOf(department) + 1) { department = if (it > 0) departments[it - 1] else ""; drawRows() }
         val teamPicker = selector(more, "Team", listOf("All teams") + teams, teams.indexOf(team) + 1) { team = if (it > 0) teams[it - 1] else ""; drawRows() }
-        val modePicker = selector(more, "Verification mode", listOf("All modes", "Setup mode", "Onsite mode", "Committee override", "Legacy / unavailable"), mode.ordinal) { mode = ViewerModeFilter.values()[it]; drawRows() }
+        val modePicker = selector(more, "Verification mode", listOf("All modes", "Historical unverified", "Onsite mode", "Committee override", "Legacy / unavailable"), mode.ordinal) { mode = ViewerModeFilter.values()[it]; drawRows() }
         ui.button(filters, "Clear list filters") {
             query = ""; department = ""; team = ""; status = ViewerStatusFilter.ALL; mode = ViewerModeFilter.ALL
             search.text.clear(); departmentPicker.setSelection(0); teamPicker.setSelection(0); modePicker.setSelection(0)
@@ -289,7 +289,7 @@ class AttendanceViewerScreen(
             card.addView(ui.text(ViewerPresentation.checkInTime(check.timestamp), 19f, AttendanceUi.INDIGO, true).apply { fontFeatureSettings = "tnum" })
             card.addView(ui.text(ViewerPresentation.evidence(check), 12f, if (check.locationChecked && check.method !in listOf("committee", "manual") && check.mode == "onsite") AttendanceUi.GREEN else AttendanceUi.MUTED))
             if (check.phoneVerified) ui.chip(card, "Phone verified", Tone.SUCCESS)
-            if (check.venueWifiObserved) ui.chip(card, "Venue Wi-Fi observed", Tone.NEUTRAL)
+            if (check.venueWifiObserved) ui.chip(card, "Office connection observed", Tone.NEUTRAL)
         }
     }
 

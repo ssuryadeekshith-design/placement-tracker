@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
-import android.text.InputFilter
 import android.text.TextWatcher
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
@@ -12,7 +11,6 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -38,7 +36,6 @@ data class EmployeeDashboardModel(
     val team: String,
     val venue: String,
     val onsite: Boolean,
-    val requiresRoomCode: Boolean,
     val passkeyRegistered: Boolean,
     val passkeyConfigured: Boolean,
     val events: List<DashboardSession>,
@@ -58,7 +55,7 @@ data class EmployeeDashboardModel(
 data class EmployeeDashboardActions(
     val onRefresh: () -> Unit,
     val onEnroll: () -> Unit,
-    val onSubmit: (eventId: String, consent: Boolean, roomCode: String) -> Unit,
+    val onSubmit: (eventId: String, consent: Boolean) -> Unit,
     val onViewAttendance: () -> Unit,
     val onHrControls: () -> Unit,
     val onStartSharing: (consent: Boolean) -> Unit,
@@ -90,7 +87,6 @@ class EmployeeDashboardScreen(
     }
     private lateinit var sessions: Spinner
     private lateinit var statement: CheckBox
-    private var roomCode: EditText? = null
     private lateinit var submit: Button
     private lateinit var submitHelp: TextView
     private lateinit var receiptContainer: LinearLayout
@@ -130,7 +126,7 @@ class EmployeeDashboardScreen(
             private val tick = object : Runnable {
                 override fun run() {
                     val today = Workday.date()
-                    if (today != date) { date = today; statement.isChecked = false; roomCode?.text?.clear(); updateSelection() }
+                    if (today != date) { date = today; statement.isChecked = false; updateSelection() }
                     root.postDelayed(this, 1000)
                 }
             }
@@ -200,18 +196,13 @@ class EmployeeDashboardScreen(
     }
 
     private fun buildMode() {
-        if (!model.onsite) {
-            ui.banner(body, "Temporary setup mode", "Physical location, Wi-Fi and room codes are not required. Your check-in location is unverified.", Tone.WARNING)
-            return
-        }
         val card = ui.card(body)
         ui.section(card, "Onsite check-in", "Your connected phone and fresh location are checked before submission.")
-        ui.chip(card, "Venue GPS · ${if (model.gpsStatus == "Confirmed now") "Confirmed on refresh" else model.gpsStatus}", if (model.gpsStatus == "Confirmed now") Tone.SUCCESS else Tone.WARNING)
-        ui.chip(card, "Wi-Fi · ${if (model.wifiStatus == "Connected now") "Connected on refresh" else model.wifiStatus}", if (model.wifiStatus == "Connected now") Tone.SUCCESS else Tone.WARNING)
-        ui.chip(card, if (model.requiresRoomCode) "Room code · required for check-in" else "Room code · not required", Tone.NEUTRAL)
+        ui.chip(card, "Venue location · checked when you submit", if (model.gpsStatus == "Confirmed now") Tone.SUCCESS else Tone.WARNING)
+        ui.chip(card, "Office connection · ${if (model.wifiStatus == "Connected now") "Connected on refresh" else model.wifiStatus}", if (model.wifiStatus == "Connected now") Tone.SUCCESS else Tone.WARNING)
         card.addView(ui.text("GPS verifies building proximity, not floor level. Unknown or stale readings do not count as verified.", 12f, AttendanceUi.MUTED))
         card.addView(ui.text("Prerequisite status is checked on refresh and again at submission.", 12f, AttendanceUi.MUTED))
-        actionButton(card, "Check Shikshavertex_5G connection", action = actions.onCheckWifi)
+        actionButton(card, "Check office connection", action = actions.onCheckWifi)
     }
 
     private fun step(parent: LinearLayout, number: String, title: String, body: String = ""): LinearLayout {
@@ -256,24 +247,9 @@ class EmployeeDashboardScreen(
         card.addView(receiptContainer)
         checkInControls = ui.column()
         card.addView(checkInControls)
-        if (model.onsite && model.requiresRoomCode) {
-            roomCode = ui.field(checkInControls, "Current 6-digit room code").apply {
-                id = View.generateViewId()
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
-                filters = arrayOf(InputFilter.LengthFilter(6))
-                letterSpacing = .16f
-                addTextChangedListener(object : TextWatcher {
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSelection() }
-                    override fun afterTextChanged(s: Editable?) {}
-                })
-            }
-            (checkInControls.getChildAt(checkInControls.indexOfChild(roomCode) - 1) as TextView).labelFor = roomCode!!.id
-            enabled.add(roomCode!! to { true })
-        }
         val consent = step(checkInControls, "3", "Attendance statement")
         statement = CheckBox(context).apply {
-            text = if (model.onsite) "I agree to save my location, accuracy and time for this check-in." else "I confirm I am marking my own attendance. Physical location is not verified in setup mode."
+            text = "I agree to save my location, accuracy and time for this check-in."
             textSize = 13f
             setTextColor(AttendanceUi.INK)
             minHeight = ui.dp(48)
@@ -301,7 +277,7 @@ class EmployeeDashboardScreen(
         submitHelp.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         sticky.addView(submitHelp)
         submit = actionButton(sticky, "Verify phone & mark attendance", primary = true, available = { canSubmit() }) {
-            selectedSession()?.let { actions.onSubmit(it.id, statement.isChecked, roomCode?.text?.toString()?.trim().orEmpty()) }
+            selectedSession()?.let { actions.onSubmit(it.id, statement.isChecked) }
         }
     }
 
@@ -312,10 +288,10 @@ class EmployeeDashboardScreen(
 
     private fun selectedSession(): DashboardSession? = if (::sessions.isInitialized) model.events.getOrNull(sessions.selectedItemPosition - 1) else null
     private fun gate() = EmployeePresentation.checkInGate(model, selectedSession()?.id,
-        ::statement.isInitialized && statement.isChecked, roomCode?.text?.toString().orEmpty(), refreshRequired)
+        ::statement.isInitialized && statement.isChecked, refreshRequired)
     private fun canSubmit() = gate() == CheckInGate.READY
     fun currentSessionId(): String? = selectedSession()?.id
-    fun invalidateCheckIn() { refreshRequired = true; statement.isChecked = false; roomCode?.text?.clear(); updateSelection() }
+    fun invalidateCheckIn() { refreshRequired = true; statement.isChecked = false; updateSelection() }
 
     private fun updateSelection() {
         if (!::submit.isInitialized || !::statement.isInitialized) return
@@ -323,7 +299,6 @@ class EmployeeDashboardScreen(
         if (selected?.id != selectedSessionId) {
             selectedSessionId = selected?.id
             statement.isChecked = false
-            roomCode?.text?.clear()
         }
         val receipt = selected?.let { model.receipts[it.id] }
         dataNotice.visibility = if (refreshRequired || model.loadedDate != Workday.date()) View.VISIBLE else View.GONE
@@ -333,9 +308,9 @@ class EmployeeDashboardScreen(
             val recordedAt = runCatching {
                 DateTimeFormatter.ofPattern("d MMM yyyy · h:mm:ss a 'IST'").withZone(Workday.zone).format(Instant.parse(receipt.timestamp))
             }.getOrDefault("Original record time unavailable")
-            ui.banner(receiptContainer, "Attendance recorded", "$recordedAt\n${if (receipt.mode == "setup") "Setup check-in · location not verified.\n" else ""}Repeat verifications preserve your original check-in time.", Tone.SUCCESS)
+            ui.banner(receiptContainer, "Attendance recorded", "$recordedAt\n${if (receipt.mode == "setup") "Historical check-in · location not verified.\n" else ""}Repeat verifications preserve your original check-in time.", Tone.SUCCESS)
             if (receipt.phoneVerified) ui.chip(receiptContainer, "Phone passkey verified", Tone.SUCCESS)
-            if (receipt.venueWifiObserved) ui.chip(receiptContainer, "Shikshavertex_5G observed at check-in", Tone.SUCCESS)
+            if (receipt.venueWifiObserved) ui.chip(receiptContainer, "Office connection observed at check-in", Tone.SUCCESS)
             if (!receiptFocused && selected.id == model.preferredSessionId) {
                 receiptFocused = true
                 receiptContainer.doOnLayout { it.requestRectangleOnScreen(android.graphics.Rect(0, 0, it.width, it.height), true) }
@@ -354,10 +329,7 @@ class EmployeeDashboardScreen(
             CheckInGate.PASSKEY_ENROLLMENT -> R.string.dashboard_passkey_enroll
             CheckInGate.NO_SELECTION -> R.string.dashboard_choose_session
             CheckInGate.SESSION_CLOSED -> R.string.dashboard_session_closed
-            CheckInGate.GPS_REQUIRED -> R.string.dashboard_gps_needed
-            CheckInGate.WIFI_REQUIRED -> R.string.dashboard_wifi_needed
             CheckInGate.STATEMENT_REQUIRED -> R.string.dashboard_statement
-            CheckInGate.ROOM_CODE_REQUIRED -> R.string.dashboard_room_code
             CheckInGate.READY -> if (model.onsite) R.string.dashboard_ready_onsite else R.string.dashboard_ready_setup
         })
         applyEnabled()

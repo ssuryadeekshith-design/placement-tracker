@@ -19,9 +19,8 @@ function loadConfig(env = process.env) {
     const production = env.NODE_ENV === 'production';
     const attendanceViewerEmails = (env.ATTENDANCE_VIEWER_EMAILS ?? 'hr@shikshavertex.in,surya_deekshith@shikshavertex.in,hr_pallavi@shikshavertex.in').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
     if (attendanceViewerEmails.some(v => !/^[^\s/@]+@shikshavertex\.in$/.test(v))) throw new Error('Invalid ATTENDANCE_VIEWER_EMAILS');
-    const onsiteFlag = (env.ENFORCE_ONSITE_ATTENDANCE || 'false').trim().toLowerCase();
-    if (!['true', 'false'].includes(onsiteFlag)) throw new Error('Invalid ENFORCE_ONSITE_ATTENDANCE');
-    const onsite = onsiteFlag === 'true';
+    // Opening the workspace is unrestricted. Physical checks apply only to attendance.
+    // Retired setup-mode environment overrides must never relax these checks.
     const hosted = env.RENDER_EXTERNAL_HOSTNAME === HOSTED_DOMAIN;
     const cookieSecret = env.DEVICE_COOKIE_SECRET || (!production && crypto.randomBytes(32).toString('hex'));
     if (!cookieSecret || cookieSecret.length < 32) throw new Error('DEVICE_COOKIE_SECRET must contain at least 32 characters');
@@ -59,8 +58,8 @@ function loadConfig(env = process.env) {
         deploymentCommit: /^[0-9a-f]{7,40}$/i.test(env.RENDER_GIT_COMMIT || '') ? env.RENDER_GIT_COMMIT : null,
         attendanceViewerEmails: [...new Set(attendanceViewerEmails)],
         bootstrapHrEmail,
-        wifi: { required: onsite, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
-        access: { required: onsite, leaseSeconds: 30, maxLocationAgeMs: 15000 },
+        wifi: { required: true, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
+        access: { required: false, leaseSeconds: 30, maxLocationAgeMs: 15000 },
         biometrics: {
             required: true,
             configured: Boolean(rpID && (webOrigins.length || androidOrigins.length)),
@@ -73,10 +72,10 @@ function loadConfig(env = process.env) {
         trustProxy: numeric(env.TRUST_PROXY_HOPS, 0, 0, 10, 'TRUST_PROXY_HOPS'),
         allowedOrigins: (env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
         venue: {
-            attendanceMode: onsite ? 'onsite' : 'setup',
-            accessRequired: onsite,
-            locationRequired: onsite,
-            attendanceWifi: { required: onsite, ssid: ATTENDANCE_SSID },
+            attendanceMode: 'onsite',
+            accessRequired: false,
+            locationRequired: true,
+            attendanceWifi: { required: true, ssid: ATTENDANCE_SSID },
             address: VENUE_ADDRESS,
             mapsUrl: MAPS_URL,
             configured: latitude !== null && longitude !== null,
@@ -84,7 +83,7 @@ function loadConfig(env = process.env) {
             longitude,
             radiusMeters: numeric(env.VENUE_RADIUS_METERS, 100, 10, 500, 'VENUE_RADIUS_METERS'),
             maxAccuracyMeters: numeric(env.VENUE_MAX_ACCURACY_METERS, 50, 1, 100, 'VENUE_MAX_ACCURACY_METERS'),
-            requiresRoomCode: onsite && env.REQUIRE_ROOM_CODE !== 'false'
+            requiresRoomCode: false
         }
     };
 }

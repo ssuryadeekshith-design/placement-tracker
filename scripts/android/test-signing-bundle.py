@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='attendance-sign-test-') as directory:
     root = Path(directory)
     bundle, private, output = root / 'bundle', root / 'private', root / 'output'
     bundle.mkdir()
-    shutil.copyfile(args.apk, bundle / 'attendance-1.7-unsigned.apk')
+    shutil.copyfile(args.apk, bundle / 'attendance-1.8-unsigned.apk')
     shutil.copyfile(args.apksigner, bundle / 'apksigner.jar')
     shutil.copyfile(script, bundle / script.name)
     (bundle / 'unsigned.sha256').write_text(hashlib.sha256(Path(args.apk).read_bytes()).hexdigest() + '\n')
@@ -39,10 +39,10 @@ with tempfile.TemporaryDirectory(prefix='attendance-sign-test-') as directory:
     key = private / 'attendance-release.p12'
     original_key = key.read_bytes()
     cert = re.search(r'Public SHA256: ([0-9A-F]{64})', first.stdout).group(1)
-    assert (output / 'attendance-1.7.apk').is_file()
+    assert (output / 'attendance-1.8.apk').is_file()
     assert not any(output.glob('*.p12')) and not any(bundle.glob('*.p12'))
     assert (key.stat().st_mode & 0o077) == 0
-    verification = subprocess.run(['java', '-jar', str(bundle / 'apksigner.jar'), 'verify', '--print-certs', str(output / 'attendance-1.7.apk')], capture_output=True, text=True, check=True)
+    verification = subprocess.run(['java', '-jar', str(bundle / 'apksigner.jar'), 'verify', '--print-certs', str(output / 'attendance-1.8.apk')], capture_output=True, text=True, check=True)
     assert cert.lower() in verification.stdout
     # Later builds must reuse the same key and pass the pinned certificate guard.
     pin.write_text(cert + '\n')
@@ -56,9 +56,9 @@ with tempfile.TemporaryDirectory(prefix='attendance-sign-test-') as directory:
     absent = subprocess.run(['bash', str(bundle / script.name)], input='', text=True, capture_output=True, env=other_env)
     assert absent.returncode != 0 and 'will not replace' in absent.stderr
     # A mismatched existing key must not publish an APK or replace that key.
-    (output / 'attendance-1.7.apk').unlink()
+    (output / 'attendance-1.8.apk').unlink()
     pin.write_text('0' * 64)
     mismatch = run(password + '\n')
     assert mismatch.returncode != 0 and 'does not match' in mismatch.stderr
-    assert not (output / 'attendance-1.7.apk').exists() and key.read_bytes() == original_key
+    assert not (output / 'attendance-1.8.apk').exists() and key.read_bytes() == original_key
 print('Portable signing tests passed: payload checksum, new-key creation/signature, private-file separation/permissions, password non-disclosure, stable reuse, pinned mismatch and missing-key guards. Only disposable keys used.')

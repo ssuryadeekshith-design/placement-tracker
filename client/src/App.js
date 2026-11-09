@@ -50,7 +50,6 @@ function Venue({ venue }) {
 
 function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy, setBusy, setError, setNotice }) {
   const [eventId, setEventId] = useState('');
-  const [roomCode, setRoomCode] = useState('');
   const [consent, setConsent] = useState(false);
   const [refreshRequired, setRefreshRequired] = useState(false);
   const mounted = useRef(true); const submitting = useRef(false);
@@ -59,16 +58,15 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
   const attended = new Set(logs.map(log => log.eventId));
   const available = events.filter(event => event.checkInOpen === true && event.date === day && !attended.has(event.id));
   const selected = available.find(event => event.id === eventId);
-  const requiresRoomCode = venue?.requiresRoomCode !== false;
-  const wifiRequired = venue?.attendanceWifi?.required === true;
-  const locationRequired = venue?.locationRequired !== false;
+  const wifiRequired = true;
+  const locationRequired = true;
   const verification = useAttendanceVerification({ setError, setNotice, setBusy });
 
   async function markAttendance(event) {
     event.preventDefault();
     if (busy || submitting.current || refreshRequired || !consent || !selected) return;
     if (selected.date !== attendanceToday()) { setError('The India date changed. Refresh attendance before checking in.'); return; }
-    if (wifiRequired) { setError(`Use the Android app while connected to ${venue.attendanceWifi.ssid}. This browser cannot verify the Wi-Fi name.`); return; }
+    if (wifiRequired) { setError(`Use the Android app while connected to ${(venue?.attendanceWifi?.ssid || 'Shikshavertex_5G')}. This browser cannot confirm the office connection.`); return; }
     submitting.current = true; setBusy(true); setError(''); setNotice('');
     try {
       const biometricProof = await verification.verify(eventId);
@@ -85,7 +83,6 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
           latitude: position.coords.latitude, longitude: position.coords.longitude,
           accuracyMeters: position.coords.accuracy, capturedAt: position.timestamp,
         } } : {}),
-        ...(requiresRoomCode ? { roomCode: roomCode.trim() } : {}),
         ...(biometricProof ? { biometricProof } : {}),
       });
       if (!mounted.current) return;
@@ -93,7 +90,7 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
       if (data?.success !== true || !record || record.uid !== employeeUid || record.eventId !== eventId) throw new Error('The attendance result could not be confirmed. Refresh before trying again.');
       onRecorded(record);
       setNotice(data.alreadyMarked ? 'Attendance was already recorded. The original check-in is preserved.' : 'Attendance recorded successfully.');
-      setConsent(false); setRoomCode(''); setEventId('');
+      setConsent(false); setEventId('');
       try { await onRefresh(); } catch (failure) { if (mounted.current) { setRefreshRequired(true); setError(`Attendance saved, but current records could not refresh. The saved receipt is retained; refresh before another check-in. ${messageFor(failure)}`); } }
     } catch (error) {
       if (!mounted.current) return;
@@ -116,9 +113,9 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
 
   return <section className="card check-in-card">
     <div className="section-heading"><div className="icon-box"><MapPin size={24} aria-hidden="true" /></div>
-      <div><h2>Mark your attendance</h2><p>{locationRequired ? 'Be at the venue before checking in.' : 'Setup mode: self check-in without location verification.'}</p></div></div>
+      <div><h2>Mark your attendance</h2><p>{locationRequired ? 'Be at the venue before checking in.' : 'Be at the venue before checking in.'}</p></div></div>
     {locationRequired && !venue?.configured && <p className="callout">Self check-in is unavailable until the venue location has been configured by the administrator.</p>}
-    {wifiRequired && <p className="callout">Attendance requires Wi-Fi <strong>{venue.attendanceWifi.ssid}</strong>. Use the Android app to mark attendance; this browser cannot verify the connected network name.</p>}
+    {wifiRequired && <p className="callout">Attendance requires the office connection <strong>{(venue?.attendanceWifi?.ssid || 'Shikshavertex_5G')}</strong>. Use the Android app to mark attendance; this browser cannot verify the connected network name.</p>}
     <PhoneVerification verification={verification} busy={busy} />
     <button type="button" className="secondary" disabled={busy} onClick={refreshRecords}>Refresh my attendance</button>
     {refreshRequired && <p className="callout">Refresh attendance before making another check-in. Any confirmed saved receipt remains in your history.</p>}
@@ -128,12 +125,8 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
         <option value="">{refreshRequired ? 'Refresh attendance to choose a session' : available.length ? 'Choose an open event' : 'No open events to check into'}</option>
         {!refreshRequired && available.map(event => <option key={event.id} value={event.id}>{event.title} · {event.date}</option>)}
       </select>
-      {requiresRoomCode && <><label htmlFor="room-code">Room code</label>
-        <input id="room-code" value={roomCode} onChange={event => setRoomCode(event.target.value)}
-          inputMode="numeric" autoComplete="off" placeholder="Code displayed inside the room" required disabled={busy} />
-        <p className="field-help">Ask the committee for the current code on the second floor. Codes expire after 60 seconds.</p></>}
       <label className="checkbox consent"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} disabled={busy} />
-        <span>{locationRequired ? 'I agree to share and store my location for this check-in. The app records my coordinates, accuracy, and check-in time only when I press the button below.' : 'I confirm I am marking my own attendance. This setup check-in does not verify my physical location.'}</span></label>
+        <span>{locationRequired ? 'I agree to share and store my location for this check-in. The app records my coordinates, accuracy, and check-in time only when I press the button below.' : 'I confirm I am marking my own attendance. My venue presence is checked on submission.'}</span></label>
       <button className="primary full-width" type="submit" disabled={busy || refreshRequired || wifiRequired || !consent || !selected || (locationRequired && !venue?.configured) || !verification.ready}>
         <MapPin size={18} aria-hidden="true" /> {busy ? 'Recording attendance…' : locationRequired ? 'Check location & mark attendance' : 'Mark attendance'}
       </button>
@@ -265,7 +258,7 @@ function AccountApp() {
               <label htmlFor="password">Password</label><div className="password-field"><input id="password" type={showPassword ? 'text' : 'password'} autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} minLength={6} required disabled={busy} /><button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} disabled={busy} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
               <button className="primary full-width" type="submit" disabled={busy}>{busy ? 'Please wait…' : authMode === 'register' ? 'Register & verify email' : 'Sign in'}</button>
             </form><button className="text-button" type="button" onClick={resetPassword} disabled={busy || !email.trim()}>Forgot your password?</button>
-          </section><aside className="onboarding"><div className="onboarding-art" aria-hidden="true"><span>SV</span><ShieldCheck size={56} /></div><p className="eyebrow">A CLEAR START TO YOUR WORKDAY</p><h2>One account. Your attendance.</h2><ol><li><strong>Create your account</strong><span>Register once using your own verified work email.</span></li><li><strong>Confirm your identity</strong><span>Follow the email link and complete HR approval when required.</span></li><li><strong>Check in with your phone</strong><span>A passkey verifies you; setup or onsite rules are always shown.</span></li></ol><p className="field-help">A browser profile binding is retained at sign-out. Clearing storage or using another profile can reset it; it is not a permanent phone identifier.</p></aside></div>
+          </section><aside className="onboarding"><div className="onboarding-art" aria-hidden="true"><span>SV</span><ShieldCheck size={56} /></div><p className="eyebrow">A CLEAR START TO YOUR WORKDAY</p><h2>One account. Your attendance.</h2><ol><li><strong>Create your account</strong><span>Register once using your own verified work email.</span></li><li><strong>Confirm your identity</strong><span>Follow the email link and complete HR approval when required.</span></li><li><strong>Check in with your phone</strong><span>Verify your identity and check in at the office.</span></li></ol><p className="field-help">A browser profile binding is retained at sign-out. Clearing storage or using another profile can reset it; it is not a permanent phone identifier.</p></aside></div>
           : !firebaseUser.emailVerified ? <section className="card auth-card verification-card"><ol className="account-stepper" aria-label="Account setup progress"><li>1 · Account</li><li aria-current="step">2 · Verify email</li><li>3 · Approval</li></ol><div className="icon-box mail-pulse"><Mail size={28} aria-hidden="true" /></div><h2>Verify your email</h2><p>Open the verification link sent to <strong>{firebaseUser.email}</strong>, then return here.</p><div className="stack"><button className="primary" type="button" onClick={verifyAgain} disabled={busy}>I have verified my email</button><button className="secondary" type="button" onClick={sendVerification} disabled={busy || resendWait > 0}>{resendWait ? `Resend in ${resendWait}s` : 'Resend verification email'}</button></div></section>
             : !session && approvalRequired ? <EmployeeApplication email={firebaseUser.email} onApproved={retryApprovedSession} />
               : !session ? <section className="card auth-card"><h2>Account access unavailable</h2><p>Your account could not be registered for attendance. Check the message above or contact HR.</p><button className="secondary" onClick={() => establishSession(firebaseUser)} disabled={busy}>Try again</button></section>
@@ -281,7 +274,7 @@ function AccountApp() {
                 {(session.user.canViewAllAttendance || committee) && <div id="all-attendance" className="workspace-section"><AttendanceDashboard key={session.user.uid} revision={reportRevision} /></div>}
                 {committee && <><div id="hr-directory" className="workspace-section"><EmployeeAdministration onChanged={accountsChanged} /></div><div id="hr-controls" className="workspace-section"><Committee venue={session.venue} events={events} logs={summary.logs} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} /></div></>}
                 {session.user.role !== 'attendance-viewer' && <div id="movement-report" className="workspace-section"><DailyReport key={session.user.uid} user={session.user} accountsRevision={accountsRevision} /></div>}
-                <p className="privacy-note"><ShieldCheck size={17} aria-hidden="true" />This browser is registered to {session.user.email}. {session.venue?.locationRequired === false ? 'Setup check-ins do not collect or verify your location.' : 'Onsite access and check-in use location checks.'} Signing out preserves the browser binding.</p>
+                <p className="privacy-note"><ShieldCheck size={17} aria-hidden="true" />This browser is registered to {session.user.email}. Location is checked when you submit attendance, not when you open the app. Signing out preserves the browser binding.</p>
               </div></div>}
     </main><footer>Shikshavertex · Employee attendance workspace · Times shown in India time</footer>
   </div>;

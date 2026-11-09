@@ -171,6 +171,7 @@ function createApp({ db, auth, config, now = Date.now }) {
         res.json({ success: true });
     }));
     app.post('/api/events/:id/room-code', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
+        if (!config.venue.requiresRoomCode) throw new HttpError(410, 'This attendance step is no longer used.');
         if (!validId(req.params.id)) throw new HttpError(400, 'Invalid event.');
         limit(`room:${req.identity.uid}`, 20);
         const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -221,6 +222,7 @@ function createApp({ db, auth, config, now = Date.now }) {
     }));
     app.post('/api/attendance/manual', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
         const wifi = checkAttendanceWifi(req.body.wifi, config.wifi, now(), req.ip);
+        const operatorLocation = config.wifi.required !== false ? checkLocation(req.body.location, config.venue, now()) : null;
         const { eventId, reason } = req.body;
         const email = normalizeEmail(req.body.email);
         if (!validId(eventId) || !/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(email) || typeof reason !== 'string' || reason.trim().length < 5 || reason.length > 500) throw new HttpError(400, 'Select an event, registered email and a reason of 5–500 characters.');
@@ -235,7 +237,7 @@ function createApp({ db, auth, config, now = Date.now }) {
             const ref = db.collection('AttendanceLogs').doc(digest(`${eventId}:${approved.uid}`));
             const existing = await transaction.get(ref);
             if (existing.exists) { alreadyMarked = true; return; }
-            transaction.create(ref, { eventId, uid: approved.uid, email, method: 'committee', attendanceMode: config.venue.locationRequired === false ? 'setup' : 'onsite', locationVerified: false, ...(wifi ? { wifi } : {}), markedBy: req.identity.uid, reason: reason.trim(), timestamp: new Date(now()).toISOString(), location: null });
+            transaction.create(ref, { eventId, uid: approved.uid, email, method: 'committee', ...(operatorLocation ? { operatorLocation } : {}), attendanceMode: config.venue.locationRequired === false ? 'setup' : 'onsite', locationVerified: false, ...(wifi ? { wifi } : {}), markedBy: req.identity.uid, reason: reason.trim(), timestamp: new Date(now()).toISOString(), location: null });
         });
         res.json({ success: true, alreadyMarked });
     }));

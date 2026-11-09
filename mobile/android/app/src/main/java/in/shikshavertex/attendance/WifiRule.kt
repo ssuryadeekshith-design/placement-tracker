@@ -1,6 +1,6 @@
 package `in`.shikshavertex.attendance
 
-/** Pure matching logic. No Wi-Fi credentials are stored or used by this app. */
+/** Pure matching logic. No office connection credentials are stored or used by this app. */
 object WifiRule {
     const val REQUIRED_SSID = "Shikshavertex_5G"
     fun normalizeSsid(raw: String?): String? {
@@ -9,9 +9,9 @@ object WifiRule {
         return value.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
     }
     fun rejection(rawSsid: String?, activeWifi: Boolean, associated: Boolean): String? {
-        if (!activeWifi || !associated) return "Connect this phone to Wi-Fi $REQUIRED_SSID and use it as the active Internet connection. Mobile data, VPN and disconnected Wi-Fi cannot mark attendance."
-        val ssid = normalizeSsid(rawSsid) ?: return "Android could not read the connected Wi-Fi name. Enable precise location and Location services, then reconnect to $REQUIRED_SSID."
-        if (ssid != REQUIRED_SSID) return "Attendance requires Wi-Fi $REQUIRED_SSID. Open Android Wi-Fi settings and connect to that network."
+        if (!activeWifi || !associated) return "Connect this phone to $REQUIRED_SSID at the office before marking attendance. Mobile data and VPN connections do not qualify."
+        val ssid = normalizeSsid(rawSsid) ?: return "Android could not confirm the office connection. Enable precise location and Location services, then reconnect to $REQUIRED_SSID."
+        if (ssid != REQUIRED_SSID) return "Connect to $REQUIRED_SSID in Android network settings before marking attendance."
         return null
     }
 }

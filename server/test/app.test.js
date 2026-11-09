@@ -81,38 +81,52 @@ async function fixture(t, extra = {}, venueOverrides = {}, access = { required: 
   return { db, request, session, code, location, config, advance: ms => { clock += ms; } };
 }
 
-test('setup check-in needs approved identity and phone proof, ignores physical claims, and preserves the first record', async t => {
-  const f = await fixture(t, {}, { attendanceMode: 'setup', accessRequired: false, locationRequired: false, requiresRoomCode: false });
-  f.config.biometrics = loadConfig({}).biometrics;
+test('production policy opens account screens anywhere but requires location, office connection and phone proof for attendance', async t => {
+  const settings = loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'false', REQUIRE_ROOM_CODE: 'true' });
+  const f = await fixture(t, {}, settings.venue, settings.access);
+  f.config.wifi = settings.wifi;
+  f.config.biometrics = settings.biometrics;
   const { cookie } = await f.session();
-  const body = { eventId: 'current', location: f.location(), locationVerified: true, attendanceMode: 'onsite' };
-  assert.equal((await f.request('/events', { cookie })).status, 200);
-  assert.equal((await f.request('/attendance', { cookie, body })).status, 403, 'setup must still require a phone proof');
-  for (const token of [null, 'unverified', 'hire', 'unlisted']) {
-    assert.ok([401, 403].includes((await f.request('/attendance', { token, cookie, body })).status));
+  // These authenticated screens must work without coordinates or an access lease.
+  for (const route of ['/events', '/attendance-summary', '/me', '/biometrics']) {
+    assert.equal((await f.request(route, { cookie })).status, 200, route);
   }
+  const admin = await f.session('committee');
+  assert.equal((await f.request('/students', { token: 'committee', cookie: admin.cookie })).status, 200);
+  assert.equal((await f.request('/events/current/room-code', { token: 'committee', cookie: admin.cookie, body: {} })).status, 410);
+  const point = f.location({ latitude: settings.venue.latitude, longitude: settings.venue.longitude });
+  const wifi = { transport: 'wifi', ssid: 'Shikshavertex_5G', observedAt: START };
+  const body = { eventId: 'current', location: point, wifi, attendanceMode: 'setup', locationRequired: false };
   const deviceId = digest(readDevice({ headers: { cookie } }, f.config.cookieSecret));
   const proof = 'b'.repeat(64), credentialId = 'phone-passkey';
   await f.db.collection('BiometricCredentials').doc(digest(credentialId)).set({ active: true, uid: 'alice', deviceId });
   await f.db.collection('BiometricProofs').doc(digest(proof)).set({ uid: 'alice', deviceId, eventId: 'current', credentialId, expiresAt: START + 60000, used: false, verifiedAt: new Date(START).toISOString() });
+  for (const token of [null, 'unverified', 'hire', 'unlisted']) {
+    assert.ok([401, 403].includes((await f.request('/attendance', { token, cookie, body })).status));
+  }
+  for (const extra of [
+    { wifi: undefined }, { wifi: { ...wifi, transport: 'cellular' } }, { wifi: { ...wifi, ssid: 'Guest' } },
+    { wifi: { ...wifi, observedAt: START - 10001 } }, { location: undefined },
+    { location: { ...point, latitude: 13.1 } }, { location: { ...point, accuracyMeters: 100 } },
+    { location: { ...point, capturedAt: START - 60001 } },
+  ]) {
+    const result = await f.request('/attendance', { cookie, body: { ...body, biometricProof: proof, ...extra } });
+    assert.ok([400, 403].includes(result.status), JSON.stringify(result));
+    assert.equal(f.db.dump()[`BiometricProofs/${digest(proof)}`].used, false);
+  }
+  assert.equal((await f.request('/attendance', { cookie, body })).status, 403, 'phone proof remains required');
+  assert.equal(Object.keys(f.db.dump()).filter(key => key.startsWith('AttendanceLogs/')).length, 0);
   const result = await f.request('/attendance', { cookie, body: { ...body, biometricProof: proof } });
   assert.equal(result.status, 200, JSON.stringify(result.data));
-  assert.equal(result.data.attendance.attendanceMode, 'setup');
-  assert.equal(result.data.attendance.locationVerified, false);
-  assert.equal(result.data.attendance.location, null);
-  assert.equal(result.data.attendance.venueAddress, null);
-  assert.equal(result.data.attendance.wifi, undefined);
+  assert.equal(result.data.attendance.attendanceMode, 'onsite');
+  assert.equal(result.data.attendance.locationVerified, true);
+  assert.equal(result.data.attendance.location.latitude, settings.venue.latitude);
+  assert.equal(result.data.attendance.wifi.ssid, 'Shikshavertex_5G');
   assert.equal(result.data.attendance.verification.method, 'passkey-user-verification');
-  assert.equal(f.db.dump()[`BiometricProofs/${digest(proof)}`].used, true);
   f.advance(1000);
-  const duplicate = await f.request('/attendance', { cookie, body: { eventId: 'current' } });
+  const duplicate = await f.request('/attendance', { cookie, body });
   assert.equal(duplicate.data.alreadyMarked, true);
   assert.equal(duplicate.data.attendance.timestamp, result.data.attendance.timestamp);
-  assert.equal((await f.request('/attendance', { cookie, body: { eventId: 'closed' } })).status, 403);
-  assert.equal((await f.request('/attendance', { cookie, body: { eventId: 'old' } })).status, 403);
-  const onsite = await fixture(t, {}, loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'true' }).venue, { required: true });
-  const onsiteMember = await onsite.session();
-  assert.equal((await onsite.request('/events', { cookie: onsiteMember.cookie })).status, 403, 'restoring onsite enforcement must reject an unleased setup client');
 });
 
 test('anonymous, invalid, unverified and unlisted identities cannot establish a device session', async t => {
@@ -290,10 +304,9 @@ test('the supplied real venue pin supports the complete authenticated self check
   const venue = loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'true' }).venue;
   const f = await fixture(t, {}, venue);
   const { cookie } = await f.session();
-  const roomCode = await f.code();
   const result = await f.request('/attendance', {
     cookie,
-    body: { eventId: 'current', roomCode, location: f.location({ latitude: venue.latitude, longitude: venue.longitude }) },
+    body: { eventId: 'current', location: f.location({ latitude: venue.latitude, longitude: venue.longitude }) },
   });
   assert.equal(result.status, 200, JSON.stringify(result.data));
   assert.equal(result.data.attendance.location.latitude, 12.912773610440954);
@@ -465,7 +478,9 @@ test('committee override cannot bypass the required Wi-Fi connection', async t =
   f.config.wifi = { required: true, ssid: 'Shikshavertex_5G' };
   const body = { eventId: 'current', email: BOB, reason: 'Student verified in the room' };
   assert.equal((await f.request('/attendance/manual', { token: 'committee', cookie: admin.cookie, body })).status, 403);
-  const result = await f.request('/attendance/manual', { token: 'committee', cookie: admin.cookie, body: { ...body, wifi: { transport: 'wifi', ssid: 'Shikshavertex_5G', observedAt: START } } });
+  assert.equal((await f.request('/attendance/manual', { token: 'committee', cookie: admin.cookie, body: { ...body, wifi: { transport: 'wifi', ssid: 'Shikshavertex_5G', observedAt: START } } })).status, 400);
+  assert.equal((await f.request('/attendance/manual', { token: 'committee', cookie: admin.cookie, body: { ...body, location: f.location({ latitude: 13.1 }), wifi: { transport: 'wifi', ssid: 'Shikshavertex_5G', observedAt: START } } })).status, 403);
+  const result = await f.request('/attendance/manual', { token: 'committee', cookie: admin.cookie, body: { ...body, location: f.location(), wifi: { transport: 'wifi', ssid: 'Shikshavertex_5G', observedAt: START } } });
   assert.equal(result.status, 200, JSON.stringify(result.data));
   const log = Object.entries(f.db.dump()).find(([path]) => path.startsWith('AttendanceLogs/'))[1];
   assert.equal(log.wifi.ssid, 'Shikshavertex_5G');

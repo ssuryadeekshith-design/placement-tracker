@@ -39,15 +39,12 @@ class MainActivity : FragmentActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var api: ApiClient
     private var busy = false
-    private var venueUnlocked = false
+    private var appAvailable = false
     private var ceremonyInProgress = false
     private var restoreAfterPrompt = false
     private var actionGeneration = 0L
-    private var venueRevision = 0L
     private var actionJob: Job? = null
     private var policyJob: Job? = null
-    private var policyLoaded = false
-    private lateinit var venueMonitor: VenueMonitor
     private var session: JSONObject? = null
     private var registeredPasskey = false
     private var biometricConfigured = false
@@ -82,13 +79,6 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        venueMonitor = VenueMonitor(this) { allowed, reason ->
-            if (allowed && !venueUnlocked) {
-                AttendanceWifi.startObserving(this)
-                venueUnlocked = true; venueRevision++
-                if (AttendanceApplication.configured && !ceremonyInProgress) openAccount()
-            } else if (!allowed) lockVenue(reason)
-        }
         layout()
         if (!AttendanceApplication.configured) {
             if (AttendanceApplication.firebaseConfigured) {
@@ -106,20 +96,20 @@ class MainActivity : FragmentActivity() {
             trackingLabel?.text = it.forUser(auth.currentUser?.uid.orEmpty()).message
             dashboardScreen?.updateSharing(it)
         } }
-        lockVenue("Loading attendance settings…")
+        appAvailable = true
+        openAccount()
     }
     override fun onResume() {
         super.onResume()
-        if (::api.isInitialized) refreshAccessPolicy()
+        if (::api.isInitialized) {
+            AttendanceWifi.startObserving(this)
+            refreshAccessPolicy()
+        }
     }
     override fun onPause() {
         authScreen?.clearPassword()
         policyJob?.cancel()
         AttendanceWifi.stopObserving()
-        if (::venueMonitor.isInitialized) venueMonitor.stop()
-        if (::api.isInitialized) {
-            lockVenue("Return to the app to continue.")
-        }
         super.onPause()
     }
     override fun onDestroy() {
@@ -131,47 +121,15 @@ class MainActivity : FragmentActivity() {
         policyJob = lifecycleScope.launch {
             try {
                 AttendancePolicyState.current = api.loadPolicy()
-                policyLoaded = true
-                if (AttendancePolicyState.current.onsiteRequired) {
-                    lockVenue("Allow precise location to open the app at the venue.")
-                    venueMonitor.start()
-                } else {
-                    venueUnlocked = true; venueRevision++
-                    if (!ceremonyInProgress) openAccount()
-                }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { policyLoaded = false; lockVenue(error.message ?: "Cannot load attendance settings. Check your internet and retry.") }
+            catch (error: Exception) { showMessage(error.message ?: "Cannot load attendance settings. Check your internet and retry.") }
         }
     }
     private fun openAccount() {
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         val user = auth.currentUser
         if (user == null) renderLogin() else if (!user.isEmailVerified) renderVerification() else runAction { establishSession() }
     }
-    private fun lockVenue(reason: String) {
-        val wasUnlocked = venueUnlocked
-        if (wasUnlocked && AttendancePolicyState.current.onsiteRequired && ::api.isInitialized && !ceremonyInProgress) lifecycleScope.launch { runCatching { api.json("/access/lock", "POST", JSONObject()) } }
-        venueUnlocked = false; venueRevision++; if (!ceremonyInProgress) actionJob?.cancel(); busy = false
-        VenueAccessState.lock()
-        layout(); heading(if (policyLoaded && AttendancePolicyState.current.onsiteRequired) "App locked — venue access required" else "Attendance access"); text(reason)
-        if (policyLoaded && AttendancePolicyState.current.onsiteRequired) {
-            text("Visit Srivari Arcade at 12.912773610440954, 77.62322878099566. Access requires a fresh, accurate location inside the 100 m venue area. GPS cannot identify the second floor.", 14f)
-            text("Foreground location checks unlock the app; they do not start workday tracking or save an access-location history. If you already consented to daily sharing, that visible service continues while away so departure and return can be reported.", 13f)
-            button("Allow precise location / retry") {
-                requestPermissionsThen(false) { venueMonitor.start() }
-            }
-            button("View venue on Maps") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) }
-        } else button("Retry attendance settings") { refreshAccessPolicy() }
-        button("Stop location sharing") {
-            stopDailySharing()
-            showNotice("Location sharing stopped on this phone. Server confirmation is separate.")
-        }
-        if (::auth.isInitialized && auth.currentUser != null) button("Sign out and stop sharing") {
-            val stop = stopDailySharing()
-            lifecycleScope.launch { stop?.join(); auth.signOut(); session = null; showNotice("Signed out. The browser/app binding is retained.") }
-        }
-    }
-
     private fun layout() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
         dashboardScreen = null; viewerScreen = null; authScreen = null; verificationScreen = null; verificationJob?.cancel(); designedBusy = null; designedMessage = null; designedNotice = null
@@ -183,7 +141,6 @@ class MainActivity : FragmentActivity() {
         content = ui.card(body)
         setContentView(ScrollView(this).apply { isFillViewport = true; fitsSystemWindows = true; addView(body) })
         heading("Employee workspace")
-        if (policyLoaded && !AttendancePolicyState.current.onsiteRequired) ui.banner(content, "Temporary setup mode", "Attendance does not check GPS, venue Wi-Fi or a room code. Physical presence is unverified.", Tone.WARNING)
         message = text("").apply { setTextColor(AttendanceUi.RED); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
     }
     private fun heading(value: String) = AttendanceUi(this).text(value, 24f, AttendanceUi.INDIGO, true).apply { setPadding(0, dp(10), 0, dp(12)); content.addView(this) }
@@ -222,12 +179,12 @@ class MainActivity : FragmentActivity() {
         setBusy(busy)
     }
     private fun runAction(action: suspend () -> Unit) {
-        if (busy || !venueUnlocked) return
+        if (busy || !appAvailable) return
         val generation = ++actionGeneration
         busy = true; buttons.forEach { it.isEnabled = false }; designedBusy?.invoke(true); showMessage("")
         actionJob = lifecycleScope.launch {
             try { action() } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
-                if (venueUnlocked && generation == actionGeneration) {
+                if (appAvailable && generation == actionGeneration) {
                     if (restoreAfterPrompt) { restoreAfterPrompt = false; runCatching { renderDashboard() } }
                     showMessage(friendlyError(error))
                 }
@@ -266,7 +223,7 @@ class MainActivity : FragmentActivity() {
         else -> error.message ?: "The operation failed. Please try again."
     }
     private fun renderLogin() {
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         verificationJob?.cancel(); verificationScreen = null; dashboardScreen = null; viewerScreen = null
         val binding = getSharedPreferences("browser_binding", MODE_PRIVATE).getString("bound_email", "").orEmpty()
         val screen = AuthScreen(this, binding, AuthActions(
@@ -322,7 +279,7 @@ class MainActivity : FragmentActivity() {
         } else verificationScreen?.showUnverified()
     }
     private fun renderVerification() {
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         authScreen = null; dashboardScreen = null; viewerScreen = null; verificationJob?.cancel()
         val screen = VerificationScreen(this, auth.currentUser?.email.orEmpty(), verificationWait(), VerificationActions(
             onVerified = { runAction { checkEmailVerification() } },
@@ -334,11 +291,11 @@ class MainActivity : FragmentActivity() {
         verificationScreen = screen
         mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
         verificationJob = lifecycleScope.launch {
-            while (verificationScreen === screen && venueUnlocked) { screen.updateCooldown(verificationWait()); kotlinx.coroutines.delay(1000) }
+            while (verificationScreen === screen && appAvailable) { screen.updateCooldown(verificationWait()); kotlinx.coroutines.delay(1000) }
         }
     }
     private suspend fun establishSession() {
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         // reload() updates the profile; force-refresh the signed email_verified claim as well.
         auth.currentUser?.getIdToken(true)?.await()
         try {
@@ -356,7 +313,7 @@ class MainActivity : FragmentActivity() {
         renderDashboard()
     }
     private fun renderEmployeeApproval(status: JSONObject) {
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         verificationJob?.cancel(); verificationScreen = null; authScreen = null; dashboardScreen = null; viewerScreen = null
         lateinit var screen: EmployeeApprovalScreen
         screen = EmployeeApprovalScreen(this, auth.currentUser?.email.orEmpty(), status, ApprovalActions(
@@ -397,7 +354,7 @@ class MainActivity : FragmentActivity() {
         mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
     private suspend fun renderDashboard() {
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         val employee = session?.optJSONObject("user") ?: return
         if (dashboardScreen == null && viewerScreen == null) showDesignLoading(if (employee.optString("role") == "attendance-viewer") "Loading attendance records" else "Loading my attendance")
         if (employee.optString("role") == "attendance-viewer") { renderAttendanceReport(); return }
@@ -420,13 +377,13 @@ class MainActivity : FragmentActivity() {
         }
         val todayReceipts = EmployeePresentation.receipts(uid, today.map { it.optString("id") }.toSet(), receipts)
         val sessions = today.filter { it.optBoolean("checkInOpen") || todayReceipts.containsKey(it.optString("id")) }
-        val onsite = AttendancePolicyState.current.onsiteRequired
+        val onsite = true
         val model = EmployeeDashboardModel(
             employee.optString("fullName"), employee.optString("email"), employee.optString("department"), employee.optString("team"),
             session?.optJSONObject("venue")?.optString("address") ?: "2nd floor, Srivari Arcade, Bengaluru",
-            onsite, session?.optJSONObject("venue")?.optBoolean("requiresRoomCode", true) != false,
+            onsite,
             registeredPasskey, biometricConfigured, sessions.map { DashboardSession(it.getString("id"), it.optString("title"), it.optString("date"), it.opt("checkInOpen") == true) }, todayReceipts,
-            if (!onsite) "Not required" else if (runCatching { VenueAccessState.current() }.isSuccess) "Confirmed now" else "Not confirmed",
+            "Checked on submission",
             if (!onsite) "Not required" else if (runCatching { AttendanceWifi.requireConnected(this) }.isSuccess) "Connected now" else "Not confirmed",
             TrackingService.status.current.forUser(uid).message, employee.optBoolean("canViewAllAttendance"), employee.optString("role") == "committee", preferredAttendanceSession,
             employeeUid = uid, sharingSnapshot = TrackingService.status.current)
@@ -443,7 +400,7 @@ class MainActivity : FragmentActivity() {
         val screen = EmployeeDashboardScreen(this, model, EmployeeDashboardActions(
             onRefresh = { runAction { refreshDashboard() } },
             onEnroll = { runAction { enrollPasskey(); renderDashboard(); showNotice("Phone passkey enrolled.") } },
-            onSubmit = { eventId, consent, code -> submitAttendance(eventId, consent, code) },
+            onSubmit = { eventId, consent -> submitAttendance(eventId, consent) },
             onViewAttendance = { runAction { renderAttendanceReport() } },
             onHrControls = { runAction { renderHrControls() } },
             onStartSharing = { consent -> startDailySharing(consent) },
@@ -451,27 +408,25 @@ class MainActivity : FragmentActivity() {
             onMovementReport = { runAction { renderMovementReport() } },
             onSignOut = { signOutAccount() },
             onMaps = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) },
-            onCheckWifi = { runAction {
-                try { AttendanceWifi.requireConnected(this); refreshDashboard(); showNotice("Connected to venue Wi-Fi at this check. It is checked again on submission.") }
+            onCheckWifi = { requestPermissionsThen(false) { AttendanceWifi.startObserving(this); runAction {
+                try { AttendanceWifi.requireConnected(this); refreshDashboard(); showNotice("Office connection confirmed at this check. It is checked again on submission.") }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { dashboardScreen?.invalidateCheckIn(); throw error }
-            } }
+            } } }
         ))
         dashboardScreen = screen; viewerScreen = null
         mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
-    private fun submitAttendance(eventId: String, consent: Boolean, roomCode: String) {
+    private fun submitAttendance(eventId: String, consent: Boolean) {
         if (!consent) { showMessage("Confirm the attendance statement first."); return }
         if (!registeredPasskey || !biometricConfigured) { showMessage("Enroll a phone passkey first."); return }
-        val onsite = AttendancePolicyState.current.onsiteRequired
         val submit: () -> Unit = { runAction {
-            if (onsite) AttendanceWifi.requireConnected(this)
+            AttendanceWifi.requireConnected(this)
             val proof = verifyPasskey(eventId)
             // Obtain the point after the OS prompt; an old pre-prompt fix may expire.
-            val location = if (onsite) LocationAccess.current(this) else null
+            val location = LocationAccess.current(this)
             val body = JSONObject().put("eventId", eventId).put("biometricProof", proof)
-            if (location != null) body.put("location", LocationAccess.point(location))
-            if (onsite) body.put("roomCode", roomCode)
+            body.put("location", LocationAccess.point(location))
             val response = api.json("/attendance", "POST", body)
             val record = response.getJSONObject("attendance")
             savedReceipts["${record.optString("uid")}:$eventId"] = record
@@ -482,7 +437,7 @@ class MainActivity : FragmentActivity() {
                 showRecordedReceipt(record, eventId)
             }
         } }
-        if (onsite) requestPermissionsThen(false, submit) else submit()
+        requestPermissionsThen(false, submit)
     }
     private fun showRecordedReceipt(record: JSONObject, eventId: String) {
         check(record.optString("uid") == auth.currentUser?.uid) { "Refresh attendance to load your own receipt." }
@@ -499,14 +454,14 @@ class MainActivity : FragmentActivity() {
         layout(); heading("Attendance recorded")
         val firstTime = runCatching { DateTimeFormatter.ofPattern("d MMM yyyy · h:mm:ss a 'IST'").withZone(Workday.zone).format(Instant.parse(record.optString("timestamp"))) }.getOrDefault("Original record time unavailable")
         text("Original check-in: $firstTime")
-        text(if (record.optString("attendanceMode") == "setup") "Setup check-in · location not verified." else "Your original attendance record is preserved.")
+        text(if (record.optString("attendanceMode") == "setup") "Historical check-in · location not verified." else "Your original attendance record is preserved.")
         text("Your check-in succeeded. The dashboard could not refresh; retry when connected.")
         button("Refresh attendance") { runAction { renderDashboard() } }
     }
     private fun startDailySharing(consent: Boolean) {
         if (!consent) { showMessage("Read and agree to workday location sharing first."); return }
         if (!Workday.contains()) { showMessage("Sharing can start only from 10:30 AM to 8:30 PM, India time."); return }
-        if (busy || !venueUnlocked || pendingPermissions != null) { showMessage("Finish the current request before starting location sharing."); return }
+        if (busy || !appAvailable || pendingPermissions != null) { showMessage("Finish the current request before starting location sharing."); return }
         val user = auth.currentUser
         if (user?.isEmailVerified != true) { showMessage("Sign in and verify your email before starting sharing."); return }
         val date = Workday.date()
@@ -550,7 +505,7 @@ class MainActivity : FragmentActivity() {
                 check(TrackingService.status.isCurrent(token)) { "The location-sharing start was cancelled." }
                 check(auth.currentUser?.uid == uid && auth.currentUser?.isEmailVerified == true) { "Your sign-in changed. Give consent again after signing in." }
                 check(Workday.contains() && Workday.date() == date) { "The location-sharing window ended. Give consent again during the next workday." }
-                if (venueUnlocked && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) break
+                if (appAvailable && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) break
                 kotlinx.coroutines.delay(100)
             }
             true
@@ -572,7 +527,7 @@ class MainActivity : FragmentActivity() {
         auth.signOut(); session = null; savedReceipts.clear(); lastDashboardModel = null; preferredAttendanceSession = ""; renderLogin()
     } }
     private suspend fun renderHrControls() {
-        if (!venueUnlocked || session?.optJSONObject("user")?.optString("role") != "committee") return
+        if (!appAvailable || session?.optJSONObject("user")?.optString("role") != "committee") return
         val events = api.array("/events")
         val requests = api.array("/registration-requests")
         val employees = api.array("/employees")
@@ -633,7 +588,7 @@ class MainActivity : FragmentActivity() {
         val filters = viewerScreen?.currentFilters() ?: ViewerFilters()
         val report = api.json("/attendance-report?date=${Uri.encode(date)}${if (eventId.isNotBlank()) "&eventId=${Uri.encode(eventId)}" else ""}")
         ViewerReportValidator.validate(report, date, eventId)
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         val screen = AttendanceViewerScreen(this, report, date, eventId, AttendanceViewerActions(
             onLoad = { day, event -> runAction { renderAttendanceReport(day, event) } },
             onBack = { if (session?.optJSONObject("user")?.optString("role") == "attendance-viewer") finish() else runAction { renderDashboard() } },
@@ -643,7 +598,7 @@ class MainActivity : FragmentActivity() {
         mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
     private suspend fun enrollPasskey() {
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         val options = api.json("/biometrics/registration/options", "POST", JSONObject())
         restoreAfterPrompt = dashboardScreen != null
         ceremonyInProgress = true
@@ -669,12 +624,10 @@ class MainActivity : FragmentActivity() {
         return verified.getString("proof")
     }
     private suspend fun awaitVenueAfterSystemPrompt() {
-        // Credential Manager may pause this Activity. Cover its content while
-        // paused, then reload policy (and require a new fix in onsite mode).
+        // Returning from the system prompt never requires an app-unlock location.
         kotlinx.coroutines.withTimeout(30000) {
-            while (!venueUnlocked) kotlinx.coroutines.delay(100)
+            while (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) kotlinx.coroutines.delay(100)
         }
-        if (AttendancePolicyState.current.onsiteRequired) VenueAccessState.current()
     }
     private fun requestPermissionsThen(tracking: Boolean, action: () -> Unit) {
         val needed = mutableListOf<String>()
@@ -688,7 +641,7 @@ class MainActivity : FragmentActivity() {
         val report = api.json("/tracking/report?date=${Uri.encode(date)}")
         check(auth.currentUser?.uid == uid) { "Your account changed. Reload your movement report." }
         MovementReportValidator.validate(report, date, uid)
-        if (!venueUnlocked) return
+        if (!appAvailable) return
         val employee = session?.optJSONObject("user")
         val screen = MovementReportScreen(this, report, MovementReportActions(
             onBack = { runAction { renderDashboard() } },

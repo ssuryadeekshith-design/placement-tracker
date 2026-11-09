@@ -41,18 +41,18 @@ jobs:
                   raise SystemExit('Hosted API configuration missing from the APK.')
           tools = pathlib.Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0'
           package = subprocess.check_output([str(tools / 'aapt'), 'dump', 'badging', str(apk)], text=True).splitlines()[0]
-          if not all(text in package for text in ["name='in.shikshavertex.attendance'", "versionName='1.7'", "versionCode='8'"]):
+          if not all(text in package for text in ["name='in.shikshavertex.attendance'", "versionName='1.8'", "versionCode='9'"]):
               raise SystemExit('Unexpected package/version. Setup bundle will not be published.')
           target = pathlib.Path('attendance-new-install-setup')
           target.mkdir()
-          shutil.copyfile(apk, target / 'attendance-1.7-unsigned.apk')
+          shutil.copyfile(apk, target / 'attendance-1.8-unsigned.apk')
           shutil.copyfile('scripts/android/sign-fresh-attendance.sh', target / 'sign-fresh-attendance.sh')
           shutil.copyfile('scripts/android/SETUP-README.txt', target / 'READ-ME-FIRST.txt')
           shutil.copyfile('mobile/android/signing-certificate.sha256', target / 'signing-certificate.sha256')
           shutil.copyfile(tools / 'lib/apksigner.jar', target / 'apksigner.jar')
           shutil.copyfile(tools / 'NOTICE.txt', target / 'Android-Build-Tools-NOTICE.txt')
           (target / 'unsigned.sha256').write_text(hashlib.sha256(apk.read_bytes()).hexdigest() + '\n')
-          (target / 'build-info.txt').write_text(f"{package}\nCommit: {os.environ['GITHUB_SHA']}\nRun: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\nAttendance API: {endpoint}\nFRESH INSTALL MIGRATION: unsigned candidate; run the local signing script, back up the key and configure server association before installation.\n")
+          (target / 'build-info.txt').write_text(f"{package}\nCommit: {os.environ['GITHUB_SHA']}\nRun: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\nAttendance API: {endpoint}\nUNSIGNED SETUP CANDIDATE: not installable; run the local signing script with the existing pinned release key.\n")
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -108,8 +108,8 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/attendance-signing.keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out attendance-1.7.apk attendance-new-install-setup/attendance-1.7-unsigned.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs attendance-1.7.apk > certificate.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/attendance-signing.keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out attendance-1.8.apk attendance-new-install-setup/attendance-1.8-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs attendance-1.8.apk > certificate.txt
           python3 - <<'PY'
           import pathlib, re
           expected = pathlib.Path('mobile/android/signing-certificate.sha256').read_text().strip().replace(':', '').upper()
@@ -119,13 +119,17 @@ jobs:
           pathlib.Path('render-passkeys.env').write_text('ANDROID_SHA256_CERT_FINGERPRINTS=' + expected + '\n')
           PY
           cp attendance-new-install-setup/build-info.txt build-info.txt
-          printf '\nSigned with the pinned owner key; reinstall migration and hosted association validation required.\n' >> build-info.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          info = Path('build-info.txt')
+          info.write_text(info.read_text().replace('UNSIGNED SETUP CANDIDATE: not installable; run the local signing script with the existing pinned release key.', 'SIGNED INSTALLER: verified against the pinned owner certificate. Update an existing installation only when it uses the same signing key.'))
+          PY
       - uses: actions/upload-artifact@v4
         if: steps.signing.outputs.ready == 'true'
         with:
           name: attendance-android
           path: |
-            attendance-1.7.apk
+            attendance-1.8.apk
             certificate.txt
             render-passkeys.env
             build-info.txt

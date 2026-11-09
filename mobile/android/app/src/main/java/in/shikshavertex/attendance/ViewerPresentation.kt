@@ -67,7 +67,7 @@ object ViewerPresentation {
 
     fun evidence(checkIn: ViewerCheckIn): String = when {
         checkIn.method in listOf("committee", "manual") -> "Committee override · location not verified"
-        checkIn.mode == "setup" -> "Setup mode · location not verified"
+        checkIn.mode == "setup" -> "Historical · location not verified"
         checkIn.mode == "onsite" && checkIn.locationChecked -> "Onsite location check recorded"
         checkIn.mode == "onsite" -> "Onsite mode · location not verified"
         else -> "Legacy record · verification unavailable"

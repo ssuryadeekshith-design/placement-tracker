@@ -8,10 +8,7 @@
     <string name="dashboard_passkey_enroll">Enroll a phone passkey to continue.</string>
     <string name="dashboard_choose_session">Choose today’s attendance session.</string>
     <string name="dashboard_session_closed">This session is closed. Refresh attendance for the latest sessions.</string>
-    <string name="dashboard_gps_needed">Wait for a fresh venue location, then refresh.</string>
-    <string name="dashboard_wifi_needed">Connect to Shikshavertex_5G, then check the connection.</string>
     <string name="dashboard_statement">Read and confirm the attendance statement.</string>
-    <string name="dashboard_room_code">Enter the current 6-digit room code.</string>
     <string name="dashboard_ready_onsite">Your phone and onsite checks will be verified on submission.</string>
-    <string name="dashboard_ready_setup">Ready to verify your phone · physical location is not checked.</string>
+    <string name="dashboard_ready_setup">Your identity and venue presence will be checked on submission.</string>
 </resources>

@@ -33,7 +33,7 @@ const shiftMonth = (month, delta) => { const date = new Date(`${month}-01T12:00:
 
 export function attendanceMode(log) {
   if (['manual', 'committee'].includes(log.method)) return { label: 'Committee override', tone: 'warning' };
-  if (log.attendanceMode === 'setup') return { label: 'Setup · location not verified', tone: 'warning' };
+  if (log.attendanceMode === 'setup') return { label: 'Historical · location not verified', tone: 'warning' };
   if (log.attendanceMode === 'onsite' && log.locationVerified === true) return { label: 'Onsite checks recorded', tone: 'success' };
   if (log.attendanceMode === 'onsite') return { label: 'Onsite · location not verified', tone: 'neutral' };
   return { label: 'Legacy · verification unavailable', tone: 'neutral' };
@@ -93,7 +93,7 @@ export default function AttendanceHistory({ logs = [], events = [], committee = 
             const mode = attendanceMode(log);
             const phoneVerified = log.verification?.method === 'passkey-user-verification';
             const wifiObserved = log.wifi?.verification === 'native-client-observation' && log.wifi?.ssid === 'Shikshavertex_5G';
-            return <tr key={log.id || `${log.eventId}-${log.uid || 'self'}-${index}`}><td><strong>{eventById.get(log.eventId)?.title || 'Attendance session'}</strong>{committee && log.reason && <p className="cc-help">Override reason: {log.reason}</p>}</td>{committee && <td>{log.fullName && <strong>{log.fullName}<br /></strong>}{log.email || log.rollNumber || 'Identity unavailable'}</td>}<td className="cc-time">{displayTime(log.timestamp)}</td><td><p className={`cc-chip cc-chip-${mode.tone}`}>{mode.label}</p>{phoneVerified && <span className="cc-evidence"><ShieldCheck size={13} aria-hidden="true" />Phone passkey verified</span>}{wifiObserved && <span className="cc-evidence">Venue Wi-Fi observed</span>}</td></tr>;
+            return <tr key={log.id || `${log.eventId}-${log.uid || 'self'}-${index}`}><td><strong>{eventById.get(log.eventId)?.title || 'Attendance session'}</strong>{committee && log.reason && <p className="cc-help">Override reason: {log.reason}</p>}</td>{committee && <td>{log.fullName && <strong>{log.fullName}<br /></strong>}{log.email || log.rollNumber || 'Identity unavailable'}</td>}<td className="cc-time">{displayTime(log.timestamp)}</td><td><p className={`cc-chip cc-chip-${mode.tone}`}>{mode.label}</p>{phoneVerified && <span className="cc-evidence"><ShieldCheck size={13} aria-hidden="true" />Phone passkey verified</span>}{wifiObserved && <span className="cc-evidence">Office connection observed</span>}</td></tr>;
           })}</tbody></table></div>
           {!filtered.length && <p className="cc-empty">No attendance records match these filters.</p>}
         </div>

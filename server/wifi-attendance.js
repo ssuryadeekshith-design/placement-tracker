@@ -18,14 +18,14 @@ function checkAttendanceWifi(observation, settings = {}, time, requestIp) {
     const ssid = settings.ssid || ATTENDANCE_SSID;
     const { transport, observedAt, bssid } = observation || {};
     if (!observation || transport !== 'wifi' || observation.ssid !== ssid) {
-        throw new HttpError(403, `Connect the Android phone to Wi-Fi ${ssid} before marking attendance. Browser check-in cannot verify the connected Wi-Fi name.`);
+        throw new HttpError(403, `Connect the Android phone to office network ${ssid} before marking attendance. Browser check-in cannot verify the connected office network name.`);
     }
     if (!Number.isFinite(time) || typeof observedAt !== 'number' || !Number.isFinite(observedAt) || observedAt < time - 10000 || observedAt > time + 5000) {
-        throw new HttpError(403, 'The Wi-Fi connection check expired. Reconnect to the required Wi-Fi and try again.');
+        throw new HttpError(403, 'The office network connection check expired. Reconnect to the required office network and try again.');
     }
     const normalizedBssid = typeof bssid === 'string' && BSSID.test(bssid) && bssid !== '02:00:00:00:00:00' && bssid !== '00:00:00:00:00:00' ? bssid.toLowerCase() : null;
     if (settings.allowedBssids?.length && (!normalizedBssid || !settings.allowedBssids.includes(normalizedBssid))) {
-        throw new HttpError(403, 'The phone is not connected to an approved venue Wi-Fi access point.');
+        throw new HttpError(403, 'The phone is not connected to an approved venue office network access point.');
     }
     if (settings.allowedIps?.length && !settings.allowedIps.includes(normalizeIp(requestIp))) {
         throw new HttpError(403, 'Attendance must be submitted through the approved venue Internet connection.');

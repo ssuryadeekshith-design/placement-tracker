@@ -7,20 +7,18 @@ const NOW = Date.parse('2026-11-04T06:00:00Z');
 const VENUE = { configured: true, latitude: 12.9, longitude: 77.6, radiusMeters: 100, maxAccuracyMeters: 50 };
 const location = overrides => ({ latitude: 12.9, longitude: 77.6, accuracyMeters: 5, capturedAt: NOW, ...overrides });
 
-test('temporary setup mode removes physical checks while onsite mode restores them together', () => {
-  for (const value of [undefined, 'false', 'true']) {
-    const config = loadConfig(value === undefined ? {} : { ENFORCE_ONSITE_ATTENDANCE: value });
-    const onsite = value === 'true';
-    assert.equal(config.venue.attendanceMode, onsite ? 'onsite' : 'setup');
-    assert.equal(config.access.required, onsite);
-    assert.equal(config.venue.accessRequired, onsite);
-    assert.equal(config.venue.locationRequired, onsite);
-    assert.equal(config.wifi.required, onsite);
-    assert.equal(config.venue.attendanceWifi.required, onsite);
-    assert.equal(config.venue.requiresRoomCode, onsite);
+test('workspace access is unrestricted while attendance always requires location and the office connection', () => {
+  for (const value of [undefined, 'false', 'true', 'retired']) {
+    const config = loadConfig({ ENFORCE_ONSITE_ATTENDANCE: value, REQUIRE_ROOM_CODE: 'true' });
+    assert.equal(config.venue.attendanceMode, 'onsite');
+    assert.equal(config.access.required, false);
+    assert.equal(config.venue.accessRequired, false);
+    assert.equal(config.venue.locationRequired, true);
+    assert.equal(config.wifi.required, true);
+    assert.equal(config.venue.attendanceWifi.required, true);
+    assert.equal(config.venue.requiresRoomCode, false);
     assert.equal(config.biometrics.required, true);
   }
-  assert.throws(() => loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'maybe' }), /ENFORCE_ONSITE_ATTENDANCE/);
 });
 
 test('owner-confirmed venue defaults are used, missing override fails closed, and production needs a strong secret', () => {
