@@ -1,5 +1,6 @@
 const { employeeAuthStatus } = require('./employee-auth-status');
 const { bootstrapHr } = require('./hr-bootstrap');
+const { importEmployeeEmails } = require('./employee-email-import');
 const { HttpError, normalizeEmail } = require('./security');
 const data = snapshot => snapshot.exists ? snapshot.data() : null;
 const idValid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -52,6 +53,10 @@ function registerEmployeeRoutes({ app, db, auth, config, now, interactiveRoute, 
         const snapshot = await db.collection('RegistrationRequests').where('status', '==', 'pending').get();
         res.json(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }));
+    app.post('/api/employees/registration-emails', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
+        limit(`employee-email-import:${req.identity.uid}`, 10);
+        res.json(await importEmployeeEmails({ db, body: req.body, actor: req.identity.uid, now }));
+    }));
     app.post('/api/registration-requests/:uid/approve', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
         const uid = req.params.uid; const employeeId = req.body.employeeId;
         if (!idValid(uid) || !/^SV\d{3}$/.test(employeeId || '')) throw new HttpError(400, 'Select a valid employee profile.');
@@ -65,6 +70,7 @@ function registerEmployeeRoutes({ app, db, auth, config, now, interactiveRoute, 
             const [employeeSnap, allowedSnap, userSnap] = await Promise.all([transaction.get(employeeRef), transaction.get(emailRef), transaction.get(userRef)]);
             const employee = data(employeeSnap); const allowed = data(allowedSnap); const user = data(userSnap);
             if (!employee || employee.active !== true) throw new HttpError(400, 'Choose an active employee from the directory.');
+            if (employee.registrationEmail && employee.registrationEmail !== request.email) throw new HttpError(409, 'This email does not match the official registration email for the selected employee. HR must review the identity.');
             if ((employee.uid && employee.uid !== uid) || (employee.email && employee.email !== request.email) || (user?.employeeId && user.employeeId !== employeeId)) throw new HttpError(409, 'Employee identity is already linked. Verify the person before changing any binding.');
             if (allowed && (allowed.enabled !== true || (allowed.uid && allowed.uid !== uid))) throw new HttpError(409, 'Existing email access requires a separate recovery review.');
             const timestamp = new Date(now()).toISOString();

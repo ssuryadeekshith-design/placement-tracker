@@ -99,6 +99,9 @@ function createApp({ db, auth, config, now = Date.now }) {
             target: { namespace: 'android_app', package_name: config.android.appId, sha256_cert_fingerprints: fingerprints }
         }] : []);
     });
+    app.get('/.well-known/apple-app-site-association', (req, res) => {
+        res.json({ webcredentials: { apps: config.ios?.appIds || [] } });
+    });
     registerTrackingRoutes({ app, db, config, now, protectedRoute: employeeRoute, committee, asyncRoute, limit, venueAccess: venueAccess.middleware });
     registerBiometricRoutes({ app, db, config, now, protectedRoute: interactiveRoute, asyncRoute, limit });
 

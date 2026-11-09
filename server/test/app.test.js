@@ -10,6 +10,7 @@ const START = Date.parse('2026-11-04T06:00:00Z');
 const ALICE = 'supriti_m@shikshavertex.in';
 const BOB = 'cbhavitha@shikshavertex.in';
 const COMMITTEE = 'committee@example.org';
+const employeeRoster = require('../employees.json');
 
 async function fixture(t, extra = {}, venueOverrides = {}, access = { required: false }) {
   let clock = START;
@@ -78,8 +79,41 @@ async function fixture(t, extra = {}, venueOverrides = {}, access = { required: 
     return result.data.code;
   }
   const location = overrides => ({ latitude: 12.9, longitude: 77.6, accuracyMeters: 5, capturedAt: clock, ...overrides });
-  return { db, request, session, code, location, config, advance: ms => { clock += ms; } };
+  return { db, url, request, session, code, location, config, advance: ms => { clock += ms; } };
 }
+
+test('only HR can privately import official emails, without creating login permission', async t => {
+  const f = await fixture(t, { 'Employees/SV001': { ...employeeRoster[0], active: true } });
+  const payload = { employees: [{ employeeId: 'SV001', fullName: employeeRoster[0].fullName, email: 'test.joe@shikshavertex.in' }] };
+  const employee = await f.session();
+  assert.equal((await f.request('/employees/registration-emails', { cookie: employee.cookie, body: payload })).status, 403);
+  const hr = await f.session('committee');
+  const result = await f.request('/employees/registration-emails', { token: 'committee', cookie: hr.cookie, body: payload });
+  assert.equal(result.status, 200); assert.equal(result.data.imported, 1);
+  assert.equal(f.db.dump()['Employees/SV001'].registrationEmail, 'test.joe@shikshavertex.in');
+  assert.equal(f.db.dump()['AllowedEmails/test.joe@shikshavertex.in'], undefined);
+});
+
+test('HR approval cannot link an account to a different official registration email', async t => {
+  const f = await fixture(t, { 'Employees/SV001': { ...employeeRoster[0], active: true, registrationEmail: 'official@shikshavertex.in' } });
+  await f.request('/registration/request', { token: 'hire', body: { fullName: employeeRoster[0].fullName } });
+  const hr = await f.session('committee');
+  const result = await f.request('/registration-requests/hire/approve', { token: 'committee', cookie: hr.cookie, body: { employeeId: 'SV001' } });
+  assert.equal(result.status, 409); assert.equal(f.db.dump()['RegistrationRequests/hire'].status, 'pending');
+  assert.equal(f.db.dump()['AllowedEmails/new.employee@shikshavertex.in'], undefined);
+});
+
+test('Apple passkey association advertises only configured app IDs', async t => {
+  const f = await fixture(t);
+  // The public association is deliberately unauthenticated, with no dynamic Host reflection.
+  const association = new URL('/.well-known/apple-app-site-association', f.url);
+  assert.deepEqual(await (await fetch(association)).json(), { webcredentials: { apps: [] } });
+  f.config.ios = { appIds: ['ABCDE12345.in.shikshavertex.attendance'] };
+  assert.deepEqual(await (await fetch(association)).json(), { webcredentials: { apps: f.config.ios.appIds } });
+  assert.deepEqual(loadConfig({}).ios.appIds, []);
+  assert.deepEqual(loadConfig({ IOS_APP_IDS: 'ABCDE12345.in.shikshavertex.attendance' }).ios.appIds, ['ABCDE12345.in.shikshavertex.attendance']);
+  assert.throws(() => loadConfig({ IOS_APP_IDS: 'placeholder' }), /Invalid IOS_APP_IDS/);
+});
 
 test('production policy opens account screens anywhere but requires location, office connection and phone proof for attendance', async t => {
   const settings = loadConfig({ ENFORCE_ONSITE_ATTENDANCE: 'false', REQUIRE_ROOM_CODE: 'true' });

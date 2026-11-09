@@ -24,6 +24,7 @@ const event = { id: 'drive-1', title: 'Placement workshop', date: '2026-11-04', 
 beforeEach(() => {
   event.date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   jest.clearAllMocks(); localStorage.clear(); firebaseConfig.firebaseConfigured = true;
+  delete window.webkit;
   onAuthStateChanged.mockImplementation((auth, callback) => { mockAuthCallback = callback; callback(mockUser); return jest.fn(); });
   mockUser = { uid: 'u1', email: 'student@shikshavertex.in', emailVerified: true, getIdToken: jest.fn().mockResolvedValue('verified-token') };
   firebaseConfig.auth.currentUser = mockUser;
@@ -47,6 +48,20 @@ function fillCheckIn() {
   fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'drive-1' } });
   fireEvent.click(screen.getByRole('checkbox', { name: /I agree to share and store my location/ }));
 }
+
+test('iPhone check-in uses native verification and displays only a confirmed server receipt', async () => {
+  const postMessage = jest.fn().mockResolvedValue({ status: 200, data: { success: true, alreadyMarked: false, attendance: { id: 'saved', uid: 'u1', eventId: 'drive-1', email: 'student@shikshavertex.in', timestamp: new Date().toISOString(), method: 'self', attendanceMode: 'onsite', locationVerified: true } } });
+  window.webkit = { messageHandlers: { attendance: { postMessage } } };
+  mockBiometrics = { required: true, registered: true, configured: true };
+  startAuthentication.mockResolvedValue({ id: 'credential' });
+  api.post.mockImplementation(path => Promise.resolve({ data: path.endsWith('/options') ? { challengeId: 'c1', options: {} } : path.endsWith('/verify') ? { verified: true, proof: 'phone-proof' } : { user: { uid: 'u1', email: mockUser.email, role: 'student' }, venue } }));
+  await dashboard(); fillCheckIn();
+  fireEvent.click(screen.getByRole('button', { name: 'Check location & mark attendance' }));
+  expect(await screen.findByText('Attendance recorded successfully.')).toBeInTheDocument();
+  expect(postMessage).toHaveBeenCalledWith({ action: 'markAttendance', eventId: 'drive-1', biometricProof: 'phone-proof', idToken: 'verified-token' });
+  expect(api.post).not.toHaveBeenCalledWith('/attendance', expect.anything());
+  expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
+});
 
 test('shows setup guidance when Firebase is not configured', () => {
   firebaseConfig.firebaseConfigured = false;

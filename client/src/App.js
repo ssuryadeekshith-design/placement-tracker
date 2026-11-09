@@ -15,6 +15,7 @@ import { EmployeeApplication, EmployeeAdministration } from './EmployeeRegistrat
 import './App.css';
 import VenueGate from './VenueGate';
 import { attendanceToday } from './attendanceReport';
+import { hasAppleAttendance, markAppleAttendance } from './appleAttendance';
 
 const BINDING_KEY = 'placement-bound-email';
 const ADDRESS = '2nd floor, Srivari Arcade, NGR Layout, Roopena Agrahara, Bommanahalli, Bengaluru, Karnataka 560068';
@@ -58,7 +59,7 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
   const attended = new Set(logs.map(log => log.eventId));
   const available = events.filter(event => event.checkInOpen === true && event.date === day && !attended.has(event.id));
   const selected = available.find(event => event.id === eventId);
-  const wifiRequired = true;
+  const wifiRequired = !hasAppleAttendance();
   const locationRequired = true;
   const verification = useAttendanceVerification({ setError, setNotice, setBusy });
 
@@ -66,25 +67,14 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
     event.preventDefault();
     if (busy || submitting.current || refreshRequired || !consent || !selected) return;
     if (selected.date !== attendanceToday()) { setError('The India date changed. Refresh attendance before checking in.'); return; }
-    if (wifiRequired) { setError(`Use the Android app while connected to ${(venue?.attendanceWifi?.ssid || 'Shikshavertex_5G')}. This browser cannot confirm the office connection.`); return; }
+    if (wifiRequired) { setError(`Use the Android or iPhone app while connected to ${(venue?.attendanceWifi?.ssid || 'Shikshavertex_5G')}. This browser cannot confirm the office connection.`); return; }
     submitting.current = true; setBusy(true); setError(''); setNotice('');
     try {
       const biometricProof = await verification.verify(eventId);
-      let position = null;
-      if (locationRequired) {
-        if (!navigator.geolocation) throw new Error('Location is unavailable in this browser. Use a browser with location support.');
-        position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject,
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }));
-      }
       if (!mounted.current) return;
-      const { data } = await api.post('/attendance', {
-        eventId,
-        ...(position ? { location: {
-          latitude: position.coords.latitude, longitude: position.coords.longitude,
-          accuracyMeters: position.coords.accuracy, capturedAt: position.timestamp,
-        } } : {}),
-        ...(biometricProof ? { biometricProof } : {}),
-      });
+      // Native code obtains fresh location + office-network observations and
+      // submits once over a connection that cannot fall back to cellular data.
+      const { data } = await markAppleAttendance(eventId, biometricProof);
       if (!mounted.current) return;
       const record = data?.attendance;
       if (data?.success !== true || !record || record.uid !== employeeUid || record.eventId !== eventId) throw new Error('The attendance result could not be confirmed. Refresh before trying again.');
@@ -115,7 +105,8 @@ function CheckIn({ events, logs, venue, employeeUid, onRecorded, onRefresh, busy
     <div className="section-heading"><div className="icon-box"><MapPin size={24} aria-hidden="true" /></div>
       <div><h2>Mark your attendance</h2><p>{locationRequired ? 'Be at the venue before checking in.' : 'Be at the venue before checking in.'}</p></div></div>
     {locationRequired && !venue?.configured && <p className="callout">Self check-in is unavailable until the venue location has been configured by the administrator.</p>}
-    {wifiRequired && <p className="callout">Attendance requires the office connection <strong>{(venue?.attendanceWifi?.ssid || 'Shikshavertex_5G')}</strong>. Use the Android app to mark attendance; this browser cannot verify the connected network name.</p>}
+    {wifiRequired && <p className="callout">Attendance requires the office connection <strong>{(venue?.attendanceWifi?.ssid || 'Shikshavertex_5G')}</strong>. Use the Android or iPhone app to mark attendance; this browser cannot verify the connected network name.</p>}
+    {!wifiRequired && <p className="field-help">Your iPhone will request precise location when you check in. Be at the office and connected to {venue?.attendanceWifi?.ssid || 'Shikshavertex_5G'}.</p>}
     <PhoneVerification verification={verification} busy={busy} />
     <button type="button" className="secondary" disabled={busy} onClick={refreshRecords}>Refresh my attendance</button>
     {refreshRequired && <p className="callout">Refresh attendance before making another check-in. Any confirmed saved receipt remains in your history.</p>}

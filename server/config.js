@@ -43,6 +43,8 @@ function loadConfig(env = process.env) {
     }
     const androidOrigins = fingerprints.map(value => `android:apk-key-hash:${Buffer.from(value.replaceAll(':', ''), 'hex').toString('base64url')}`);
     const androidAppId = env.ANDROID_APP_ID || 'in.shikshavertex.attendance';
+    const iosAppIds = (env.IOS_APP_IDS || '').split(',').map(value => value.trim()).filter(Boolean);
+    if (iosAppIds.some(value => !/^[A-Z0-9]{10}\.[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+$/.test(value))) throw new Error('Invalid IOS_APP_IDS: use TEAMID.bundle.identifier');
     if (!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/.test(androidAppId)) throw new Error('Invalid ANDROID_APP_ID');
     const allowedBssids = (env.WIFI_ATTENDANCE_BSSIDS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
     if (allowedBssids.some(value => !/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(value) || ['02:00:00:00:00:00', '00:00:00:00:00:00'].includes(value))) throw new Error('Invalid WIFI_ATTENDANCE_BSSIDS');
@@ -67,6 +69,7 @@ function loadConfig(env = process.env) {
             rpName: 'Shiksha Vertex Attendance'
         },
         android: { appId: androidAppId, fingerprints },
+        ios: { appIds: [...new Set(iosAppIds)] },
         cookieSecret,
         port: numeric(env.PORT, 5001, 1, 65535, 'PORT'),
         trustProxy: numeric(env.TRUST_PROXY_HOPS, 0, 0, 10, 'TRUST_PROXY_HOPS'),

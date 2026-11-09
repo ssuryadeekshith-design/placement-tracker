@@ -1,5 +1,11 @@
 # Shiksha Vertex attendance
 
+The [private employee email import](docs/employee-email-import.md) matches official
+registration emails to existing employee profiles while preserving HR approval.
+The [iPhone/iPad app](mobile/ios/README.md) reuses the web workspace and adds native
+office checks for attendance. Apple team configuration, signing and physical
+iPhone validation are required before distributing it through TestFlight.
+
 The completed Android and web interfaces are collected in one review branch. See [integration checks and remaining deployment/signing blockers](docs/integration-review.md) and the [screen design references](docs/design/README.md). Android 1.8 opens anywhere and requires venue presence plus the approved office connection only for attendance. The owner-approved release signing identity is pinned. See [the new signing setup](docs/android-signing-setup.md); the private release key is created on the owner’s computer and must be backed up. Server certificate association and physical-phone validation are still required.
 
 The owner-selected attendance viewers are `hr@shikshavertex.in`, `surya_deekshith@shikshavertex.in` and `hr_pallavi@shikshavertex.in`. The first keeps existing HR permissions; the latter two gain read-only attendance viewing without new HR or other-person movement-history rights. See [viewer access, dashboard use and deployment](docs/attendance-viewers.md).
