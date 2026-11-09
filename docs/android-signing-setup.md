@@ -1,4 +1,4 @@
-# Android 1.8 signing and installation
+# Android 1.9 signing and installation
 
 The owner explicitly approved a new signing identity and reinstalling phones that have the old identity. The previous signing-file recovery procedure is superseded. Reinstalling does not delete server attendance records, but local sign-in/binding/passkey state can need setup again. Do not uninstall anything until the new certificate is allowed by the hosted server and the test APK is ready.
 
@@ -6,7 +6,7 @@ The owner explicitly approved a new signing identity and reinstalling phones tha
 
 Open GitHub → `ssuryadeekshith-design/placement-tracker` → **Actions → Build attendance APK**. Use the latest successful `main` run after this migration change, or use **Run workflow → main**. From its Artifacts section download **attendance-new-install-setup** on the computer, then extract the full ZIP into Downloads.
 
-This artifact intentionally contains an unsigned 1.8 candidate, a portable AOSP signing tool with its notice, and the local signing script. It is not an employee installer. No keystore/password is included. Unlike the previous workflow, a missing CI signing secret does not prevent building this local-signing setup bundle.
+This artifact intentionally contains an unsigned 1.9 candidate, a portable AOSP signing tool with its notice, and the local signing script. It is not an employee installer. No keystore/password is included. Unlike the previous workflow, a missing CI signing secret does not prevent building this local-signing setup bundle.
 
 ## 2. Create the key and sign locally on the owner's Mac
 
@@ -22,7 +22,7 @@ For the current pinned release, restore/reuse `~/ShikshavertexSigning/attendance
 
 - **Private key:** `~/ShikshavertexSigning/attendance-release.p12`
 - **Alias:** `shikshavertex-attendance-release`
-- **Signed installer:** `~/Desktop/Shikshavertex Attendance/attendance-1.8.apk`
+- **Signed installer:** `~/Desktop/Shikshavertex Attendance/attendance-1.9.apk`
 - **Public certificate:** `certificate.txt` and `render-passkeys.env` beside the signed installer
 
 Back up the encrypted `.p12` file privately and keep its password separately. Do not upload that folder to a public repository, chat or an employee Drive share. Re-running the script reuses the same key. Once its public certificate has been pinned, a missing/different private key blocks signing instead of silently generating a replacement.
@@ -58,6 +58,6 @@ On the Mac, copy base64 directly to the clipboard without printing it:
 base64 < "$HOME/ShikshavertexSigning/attendance-release.p12" | tr -d '\r\n' | pbcopy
 ```
 
-Paste that only into `ANDROID_KEYSTORE_BASE64` and clear the clipboard afterward (`printf '' | pbcopy`). The pinned public certificate must already match. With all four secrets present the job signs and verifies the APK, uploads **attendance-android** containing `attendance-1.8.apk` and public metadata, and always removes temporary private files. No cached debug-key fallback is used. A partial secret configuration or mismatched key stops signed publication.
+Paste that only into `ANDROID_KEYSTORE_BASE64` and clear the clipboard afterward (`printf '' | pbcopy`). The pinned public certificate must already match. With all four secrets present the job signs and verifies the APK, uploads **attendance-android** containing `attendance-1.9.apk` and public metadata, and always removes temporary private files. No cached debug-key fallback is used. A partial secret configuration or mismatched key stops signed publication.
 
 Without these secrets, the successful setup artifact still lets the owner sign privately on their own computer. This avoids depending on a temporary cloud workspace to hold the only copy of a production key.

@@ -4,7 +4,7 @@ set +x
 set -euo pipefail
 umask 077
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-apk="$script_dir/attendance-1.8-unsigned.apk"
+apk="$script_dir/attendance-1.9-unsigned.apk"
 store_dir="${SHIKSHAVERTEX_SIGNING_DIR:-$HOME/ShikshavertexSigning}"
 apk_dir="${SHIKSHAVERTEX_APK_DIR:-$HOME/Desktop/Shikshavertex Attendance}"
 store="$store_dir/attendance-release.p12"
@@ -48,15 +48,15 @@ fi
 keytool -exportcert -keystore "$store" -alias "$alias_name" -storepass:env SHIKSHAVERTEX_SIGNING_PASSWORD -file "$work/certificate.der" >/dev/null
 actual_cert="$(shasum -a 256 "$work/certificate.der" | awk '{print $1}' | tr '[:lower:]' '[:upper:]')"
 if [ "$pinned" != 'UNCONFIGURED' ] && [ "$actual_cert" != "$pinned" ]; then fail 'This key does not match the pinned release certificate. No signed APK was published.'; fi
-java -jar "$script_dir/apksigner.jar" sign --ks "$store" --ks-key-alias "$alias_name" --ks-pass env:SHIKSHAVERTEX_SIGNING_PASSWORD --key-pass env:SHIKSHAVERTEX_SIGNING_PASSWORD --out "$work/attendance-1.8.apk" "$apk"
-java -jar "$script_dir/apksigner.jar" verify --print-certs "$work/attendance-1.8.apk" > "$work/certificate.txt"
+java -jar "$script_dir/apksigner.jar" sign --ks "$store" --ks-key-alias "$alias_name" --ks-pass env:SHIKSHAVERTEX_SIGNING_PASSWORD --key-pass env:SHIKSHAVERTEX_SIGNING_PASSWORD --out "$work/attendance-1.9.apk" "$apk"
+java -jar "$script_dir/apksigner.jar" verify --print-certs "$work/attendance-1.9.apk" > "$work/certificate.txt"
 verified_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$work/certificate.txt" | tr '[:lower:]' '[:upper:]')"
 [ "$verified_cert" = "$actual_cert" ] || fail 'APK certificate verification failed. No signed APK was published.'
-cp "$work/attendance-1.8.apk" "$apk_dir/attendance-1.8.apk"
+cp "$work/attendance-1.9.apk" "$apk_dir/attendance-1.9.apk"
 cp "$work/certificate.txt" "$apk_dir/certificate.txt"
 printf 'ANDROID_SHA256_CERT_FINGERPRINTS=%s\n' "$actual_cert" > "$apk_dir/render-passkeys.env"
 if [ -f "$script_dir/build-info.txt" ]; then cp "$script_dir/build-info.txt" "$apk_dir/build-info.txt"; fi
-printf '\nSigned and verified APK: %s/attendance-1.8.apk\n' "$apk_dir"
+printf '\nSigned and verified APK: %s/attendance-1.9.apk\n' "$apk_dir"
 printf 'Public SHA256: %s\n' "$actual_cert"
 printf '\nBack up %s privately and keep its password in your password manager.\n' "$store"
 printf 'Do not upload the signing folder or password to chat or GitHub files.\n'
