@@ -142,8 +142,12 @@ function createApp({ db, auth, config, now = Date.now }) {
         res.json(await attendanceReport({ db, date: req.query.date ?? indiaDate(now()), eventId: req.query.eventId, now }));
     }));
     app.get('/api/students', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
-        const snapshot = await db.collection('Users').get();
-        res.json(snapshot.docs.map(doc => { const user = doc.data(); return { uid: doc.id, email: user.email, fullName: user.fullName || '' }; }));
+        const [snapshot, approvals] = await Promise.all([db.collection('Users').get(), db.collection('AllowedEmails').get()]);
+        const approved = new Map(approvals.docs.map(doc => [doc.id, doc.data()]));
+        res.json(snapshot.docs.map(doc => {
+            const user = doc.data(), access = approved.get(user.email);
+            return { uid: doc.id, email: user.email, fullName: user.fullName || '', attendanceEligible: access?.enabled === true && access.uid === doc.id };
+        }));
     }));
     app.get('/api/events', ...interactiveRoute, asyncRoute(async (req, res) => {
         const snapshot = await db.collection('Events').get();

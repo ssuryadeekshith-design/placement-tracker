@@ -1,0 +1,209 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shikshavertex · Attendance Viewer review</title><style>
+    @font-face { font-family: Inter; src: url('../../mobile/android/app/src/main/res/font/inter.ttf') format('truetype'); font-display: swap; }
+    :root { --indigo: #1e1b4b; --blue: #2563eb; --canvas: #f8fafc; --white: #fff; --border: #e2e8f0; --ink: #0f172a; --muted: #64748b; --green: #047857; --green-soft: #ecfdf5; --amber: #92400e; --amber-soft: #fffbeb; --red: #b91c1c; --red-soft: #fef2f2; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eef2f7; color: var(--ink); font: 14px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }
+    button, input, select { font: inherit; }
+    button, input, select, summary { -webkit-tap-highlight-color: transparent; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .48; }
+    button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #93c5fd; outline-offset: 3px; }
+    [hidden] { display: none !important; }
+    .review { width: min(100%, 980px); margin: 0 auto; padding: 32px 20px 28px; }
+    .review-header { margin: 0 auto 22px; max-width: 660px; text-align: center; }
+    .review-label { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #cbd5e1; background: #fff; border-radius: 99px; padding: 5px 11px; font-size: 11px; font-weight: 650; color: #475569; }
+    .review-label::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+    .review-header h1 { margin: 12px 0 8px; color: var(--indigo); font-size: clamp(23px, 4vw, 30px); letter-spacing: -.8px; line-height: 1.2; }
+    .review-header p { margin: 0; color: #475569; font-size: 13px; }
+    .view-tabs { display: flex; gap: 4px; padding: 4px; background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 12px; width: min(100%, 440px); margin: 20px auto 24px; }
+    .view-tabs button { flex: 1; border: 0; border-radius: 8px; min-height: 46px; padding: 8px 10px; color: #475569; background: transparent; font-weight: 650; font-size: 12px; }
+    .view-tabs button[aria-selected="true"] { color: var(--indigo); background: #fff; box-shadow: 0 2px 5px #0f172a0a; }
+    .device { width: 390px; max-width: 100%; padding: 8px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 36px; background: #fff; box-shadow: 0 24px 70px #1e293b18, 0 2px 5px #1e293b0a; }
+    .screen { height: 828px; max-height: calc(100dvh - 100px); min-height: 530px; border-radius: 28px; overflow: hidden; background: var(--canvas); position: relative; display: flex; flex-direction: column; }
+    .device-top { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 10px 20px 6px; font-size: 10px; font-weight: 650; letter-spacing: .4px; color: var(--muted); background: var(--canvas); }
+    .device-top .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: #94a3b8; margin-right: 4px; }
+    .panel { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+    .scroll { overflow-y: auto; overscroll-behavior: contain; flex: 1; min-height: 0; padding: 12px 16px 24px; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+    .brand { color: var(--indigo); font-size: 10px; font-weight: 750; letter-spacing: 1.5px; margin: 0 0 8px; display: flex; gap: 8px; align-items: center; }
+    .brand-mark { width: 23px; height: 23px; background: var(--indigo); border-radius: 7px; color: #fff; font-size: 9px; display: grid; place-items: center; letter-spacing: 0; }
+    .page-title { display: flex; align-items: start; justify-content: space-between; gap: 10px; margin: 8px 0 16px; }
+    h2 { margin: 0; color: var(--indigo); font-size: 24px; line-height: 1.2; letter-spacing: -.7px; }
+    .page-title p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .refresh-icon { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--blue); min-width: 42px; min-height: 42px; display: grid; place-items: center; }
+    .refresh-icon svg { width: 18px; height: 18px; }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 3px #0f172a03; }
+    .identity-row { display: flex; gap: 12px; align-items: start; }
+    .avatar { width: 43px; height: 43px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 12px; color: #fff; background: var(--indigo); font-size: 15px; font-weight: 700; }
+    .identity-row h3 { margin: 0 0 3px; font-size: 17px; letter-spacing: -.3px; line-height: 1.3; }
+    .identity-row .email { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 6px; font-size: 10px; line-height: 1.4; font-weight: 650; background: #f1f5f9; color: #475569; }
+    .chip.success { background: var(--green-soft); color: var(--green); }
+    .chip.warning { background: var(--amber-soft); color: var(--amber); }
+    .chip.blue { background: #eff6ff; color: #1d4ed8; }
+    .venue { border-top: 1px solid #f1f5f9; margin-top: 14px; padding-top: 12px; }
+    .eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .8px; font-weight: 700; }
+    .venue p { margin: 0; font-size: 11px; color: #475569; }
+    .banner { border: 1px solid #fde68a; border-radius: 12px; background: var(--amber-soft); padding: 13px 14px; color: var(--amber); margin-bottom: 14px; }
+    .banner strong { display: block; font-size: 12px; margin-bottom: 4px; }
+    .banner p { margin: 0; font-size: 11px; line-height: 1.6; }
+    .card-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .card-heading h3 { font-size: 15px; letter-spacing: -.2px; margin: 0; color: var(--indigo); }
+    .caption { font-size: 11px; color: var(--muted); margin: 4px 0 0; }
+    .step { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 9px; margin-top: 20px; }
+    .step-number { width: 25px; height: 25px; display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 1px solid #dbeafe; background: #eff6ff; color: var(--blue); border-radius: 50%; }
+    .step h4 { margin: 2px 0 7px; font-size: 12px; font-weight: 700; }
+    .step .chip-row { margin-top: 0; }
+    label.field-label { display: block; color: #475569; font-size: 10px; font-weight: 650; margin-bottom: 5px; }
+    input[type="search"], input[type="date"], select { width: 100%; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; color: var(--ink); min-height: 43px; padding: 9px 10px; font-size: 12px; }
+    input[type="search"]::placeholder { color: #94a3b8; }
+    input[type="date"] { min-width: 0; font-variant-numeric: tabular-nums; }
+    select { padding-right: 24px; }
+    .check-label { display: flex; align-items: start; gap: 8px; font-size: 11px; color: #475569; line-height: 1.6; padding: 2px 0; }
+    .check-label input { width: 17px; height: 17px; margin: 2px 0 0; flex: 0 0 auto; accent-color: var(--blue); }
+    .privacy { margin: 17px 0 0; border-top: 1px solid #f1f5f9; padding-top: 12px; display: flex; gap: 6px; font-size: 10px; line-height: 1.6; color: var(--muted); }
+    .privacy svg { width: 13px; height: 15px; flex: 0 0 auto; margin-top: 2px; }
+    .sticky { flex: 0 0 auto; padding: 10px 16px 17px; background: #fff; border-top: 1px solid var(--border); box-shadow: 0 -4px 12px #0f172a04; }
+    .sticky p { margin: 0 0 7px; font-size: 10px; color: var(--muted); }
+    .button { border: 1px solid var(--border); background: #fff; color: var(--blue); border-radius: 9px; min-height: 43px; padding: 9px 12px; font-size: 11px; font-weight: 650; }
+    .button.primary { width: 100%; background: var(--blue); border-color: var(--blue); color: #fff; min-height: 48px; font-size: 12px; box-shadow: 0 2px 4px #2563eb16; }
+    .button.full { width: 100%; }
+    .button.quiet { min-height: 36px; border: 0; padding: 6px 0; background: transparent; color: var(--muted); font-size: 10px; }
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    .actions .button { flex: 1; }
+    details summary { cursor: pointer; list-style: none; display: flex; gap: 8px; justify-content: space-between; align-items: center; color: var(--indigo); font-weight: 700; font-size: 13px; min-height: 32px; }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::after { content: '+'; font-weight: 500; font-size: 20px; color: var(--muted); }
+    details[open] summary::after { content: '−'; }
+    .sharing-details { margin-top: 14px; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+    .sharing-details p { font-size: 11px; color: var(--muted); }
+    .status-line { margin: 10px 0 0; display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
+    .status-dot { display: inline-block; width: 6px; height: 6px; background: #94a3b8; border-radius: 50%; }
+    .demo-active .status-dot { background: #10b981; animation: pulse 1.6s infinite; }
+    .demo-active { color: var(--green); }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 4px #10b98118; } }
+    .receipt { margin-top: 17px; border: 1px solid #a7f3d0; border-radius: 10px; background: var(--green-soft); color: #065f46; padding: 14px; }
+    .receipt strong { display: block; font-size: 13px; margin-bottom: 7px; }
+    .receipt .time { font-size: 16px; font-weight: 700; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+    .receipt p { margin: 6px 0 0; font-size: 10px; }
+    .sample-inline { color: var(--muted); font-size: 10px; margin: 14px 0 0; line-height: 1.6; }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 15px 0; }
+    .metric { padding: 11px 9px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+    .metric p { font-size: 9px; color: var(--muted); margin: 0 0 5px; line-height: 1.5; }
+    .metric strong { font-size: 23px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.8px; }
+    .metric.checked { background: #ecfdf5; border-color: #d1fae5; }
+    .metric.checked strong { color: #047857; }
+    .metric.pending strong { color: #b45309; }
+    .filter-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 10px; }
+    .filter-grid > div { min-width: 0; }
+    .report-meta { color: var(--muted); font-size: 10px; margin: 12px 0; }
+    .employee-row { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+    .employee-row .avatar { width: 34px; height: 34px; font-size: 11px; border-radius: 10px; background: #eef2ff; color: #4338ca; }
+    .employee-row .identity-row { gap: 10px; }
+    .employee-row h3 { font-size: 13px; margin: 0 0 2px; }
+    .employee-row .department { color: var(--muted); font-size: 10px; margin: 0; }
+    .employee-row .check-time { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; margin: 12px 0 0; }
+    .employee-row .email { font-size: 10px; overflow-wrap: anywhere; }
+    .employee-row .chip-row { margin-top: 9px; }
+    .empty { padding: 24px 14px; text-align: center; border: 1px dashed #cbd5e1; border-radius: 12px; color: var(--muted); background: #fff; font-size: 12px; }
+    .viewer-note { border: 1px solid #dbeafe; background: #eff6ff; color: #1e40af; border-radius: 10px; padding: 11px 12px; font-size: 10px; margin: 12px 0; }
+    .preview-footer { max-width: 460px; text-align: center; margin: 22px auto 0; color: #64748b; font-size: 11px; line-height: 1.7; }
+    .preview-footer strong { color: #475569; }
+    @media (max-width: 430px) {
+      .review { padding: 21px 12px; }
+      .review-header p { font-size: 12px; }
+      .device { border-radius: 28px; padding: 5px; }
+      .screen { height: 780px; max-height: none; border-radius: 23px; }
+      .scroll { padding: 10px 12px 20px; }
+      .sticky { padding: 10px 12px 15px; }
+      .card { padding: 13px; }
+      .identity-row h3 { font-size: 16px; }
+      h2 { font-size: 22px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; } }
+  </style></head><body><div class="review"><header class="review-header"><span class="review-label">Sample data · Design reference</span><h1>All-Employees Attendance Viewer</h1><p>Read-only records. “Not marked yet” is not an absence decision.</p></header><p style="text-align:center;font-size:12px"><label><input id="demo-denied" type="checkbox"> Simulate denied or incomplete refresh</label></p><main class="device"><div class="screen"><section class="panel" id="viewer-panel" aria-label="Read-only attendance viewer">
+          <div class="scroll" id="viewer-scroll">
+            <p class="brand"><span class="brand-mark" aria-hidden="true">SV</span> SHIKSHAVERTEX</p>
+            <div class="page-title"><div><h2>All employees</h2><p>Read-only attendance · sample data</p></div><span class="chip blue">Viewer</span></div>
+            <div class="metrics" aria-label="Sample attendance summary"><div class="metric"><p>Accounts in report</p><strong id="viewer-total">3</strong></div><div class="metric checked"><p>Checked in</p><strong id="viewer-checked">2</strong></div><div class="metric pending"><p>Not marked yet</p><strong id="viewer-pending">1</strong></div></div>
+            <article class="card">
+              <label class="field-label" for="viewer-search">Find an employee</label><input type="search" id="viewer-search" placeholder="Search sample name or email" autocomplete="off">
+              <div class="filter-grid">
+                <div><label class="field-label" for="viewer-status">Attendance status</label><select id="viewer-status"><option value="all">All statuses</option><option value="marked">Checked in</option><option value="not-marked">Not marked yet</option></select></div>
+                <div><label class="field-label" for="viewer-department">Department</label><select id="viewer-department"><option value="all">All departments</option><option value="Operations">Operations</option><option value="Learning">Learning</option><option value="Sales">Sales</option></select></div>
+                <div><label class="field-label" for="viewer-mode">Verification mode</label><select id="viewer-mode"><option value="all">All modes</option><option value="setup">Setup mode</option><option value="onsite">Onsite checks</option></select></div>
+              </div>
+            </article>
+            <article class="card">
+              <form id="viewer-refresh-form">
+                <div class="filter-grid" style="margin-top:0"><div><label class="field-label" for="viewer-date">Attendance date</label><input type="date" id="viewer-date" value="2026-11-08" required></div><div><label class="field-label" for="viewer-session">Session</label><select id="viewer-session"><option value="all">All sessions</option><option value="morning">Daily attendance</option><option value="workshop">Learning workshop</option></select></div></div>
+                <button type="submit" class="button full" id="viewer-refresh" style="margin-top:12px">Refresh sample report</button>
+              </form>
+              <p class="caption" id="viewer-loaded">Loaded sample report: 8 Nov 2026 · All sessions</p>
+            </article>
+            <p class="viewer-note">“Not marked yet” is not an absence decision. These are fictional sample accounts, not your employee directory. Filters change sample rows only.</p>
+            <button class="button full" id="viewer-clear">Clear list filters</button><p class="report-meta" id="viewer-result-count" role="status">Showing 3 sample accounts</p>
+            <div id="viewer-results" aria-label="Sample employee attendance records"></div>
+            <button type="button" class="button full" id="viewer-back">Back to my attendance</button>
+            <p class="sample-inline">Sample data · Design preview. No live refresh, employee information, GPS history or real attendance is available here.</p>
+          </div>
+        </section></div></main><footer class="preview-footer"><strong>Design reference, not a native phone capture.</strong><br>Fictional accounts only. No API, attendance edits, HR decisions or movement tracking.</footer></div><script>(()=>{'use strict';const $=id=>document.getElementById(id);let failed=false;const fixtures = [
+        { name: 'Maya Rao', email: 'maya.sample@example.com', department: 'Operations', team: 'Campus', initials: 'MR', checkIns: [{ session: 'morning', time: '10:31:12 am IST', mode: 'setup', phoneVerified: true, wifiObserved: false }] },
+        { name: 'Arun Shah', email: 'arun.sample@example.com', department: 'Learning', team: 'Academics', initials: 'AS', checkIns: [{ session: 'workshop', time: '1:16:05 pm IST', mode: 'onsite', phoneVerified: true, wifiObserved: true }] },
+        { name: 'Leena Das', email: 'leena.sample@example.com', department: 'Sales', team: 'Enterprise', initials: 'LD', checkIns: [] },
+      ];
+      let reportDate = '2026-11-08';
+      let reportSession = 'all';
+      function appendText(parent, tag, text, className) {
+        const element = document.createElement(tag); element.textContent = text;
+        if (className) element.className = className;
+        parent.append(element); return element;
+      }
+      function renderViewer() { if(failed)return;
+        const source = reportDate === '2026-11-08' ? fixtures.map(row => ({ ...row, checkIns: row.checkIns.filter(check => reportSession === 'all' || check.session === reportSession) })) : [];
+        const marked = source.filter(row => row.checkIns.length).length;
+        $('viewer-total').textContent = source.length;
+        $('viewer-checked').textContent = marked;
+        $('viewer-pending').textContent = source.length - marked;
+        const query = $('viewer-search').value.trim().toLowerCase();
+        const status = $('viewer-status').value;
+        const department = $('viewer-department').value;
+        const mode = $('viewer-mode').value;
+        const rows = source.filter(row => (`${row.name} ${row.email} ${row.department} ${row.team}`).toLowerCase().includes(query) &&
+          (department === 'all' || row.department === department) &&
+          (status === 'all' || (row.checkIns.length ? 'marked' : 'not-marked') === status) &&
+          (mode === 'all' || row.checkIns.some(check => check.mode === mode)));
+        $('viewer-results').replaceChildren();
+        rows.forEach(row => {
+          const card = document.createElement('article'); card.className = 'employee-row';
+          const identity = document.createElement('div'); identity.className = 'identity-row';
+          const avatar = appendText(identity, 'div', row.initials, 'avatar'); avatar.setAttribute('aria-hidden', 'true');
+          const details = document.createElement('div');
+          appendText(details, 'h3', row.name); appendText(details, 'p', `${row.department} · ${row.team}`, 'department');
+          appendText(details, 'div', row.email, 'email'); identity.append(details); card.append(identity);
+          const chips = document.createElement('div'); chips.className = 'chip-row';
+          appendText(chips, 'span', row.checkIns.length ? '✓ Checked in' : 'Not marked yet', row.checkIns.length ? 'chip success' : 'chip warning');
+          if (!row.checkIns.length) {
+            appendText(card, 'p', 'No check-in in the selected sample session.', 'caption');
+          } else row.checkIns.forEach(check => {
+            appendText(card, 'p', check.time, 'check-time');
+            if (check.phoneVerified) appendText(chips, 'span', 'Phone passkey verified', 'chip success');
+            appendText(chips, 'span', check.mode === 'setup' ? 'Setup · location unverified' : 'Onsite checks recorded', check.mode === 'setup' ? 'chip warning' : 'chip blue');
+            if (check.wifiObserved) appendText(chips, 'span', 'Shikshavertex_5G observed', 'chip');
+          });
+          card.append(chips); $('viewer-results').append(card);
+        });
+        if (!rows.length) appendText($('viewer-results'), 'p', source.length ? 'No sample accounts match these filters.' : 'No sample records for this date. Select 8 Nov 2026 to review the fixtures.', 'empty');
+        $('viewer-result-count').textContent = `Showing ${rows.length} of ${source.length} fictional sample accounts`;
+      }
+      ['viewer-search', 'viewer-status', 'viewer-department', 'viewer-mode'].forEach(id => $(id).addEventListener(id === 'viewer-search' ? 'input' : 'change', renderViewer));
+      $('viewer-refresh-form').addEventListener('submit', event => {
+        event.preventDefault();
+        if($('demo-denied').checked){failed=true;$('viewer-results').replaceChildren();['viewer-total','viewer-checked','viewer-pending'].forEach(id=>$(id).textContent='—');$('viewer-result-count').textContent='Records hidden. Refresh attendance to retry.';return}failed=false;
+        reportDate = $('viewer-date').value;
+        reportSession = $('viewer-session').value;
+        $('viewer-loaded').textContent = `Loaded sample report: ${reportDate} · ${$('viewer-session').selectedOptions[0].textContent}. No network request was made.`;
+        renderViewer();
+      });
+
+$('viewer-clear').onclick=()=>{$('viewer-search').value='';['viewer-status','viewer-department','viewer-mode'].forEach(id=>$(id).value='all');renderViewer()};$('viewer-back').onclick=()=>{$('viewer-result-count').textContent='Back action demonstrated. No other screen is opened.'};renderViewer();})();</script></body></html>

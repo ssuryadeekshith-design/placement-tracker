@@ -29,8 +29,8 @@ android {
         applicationId = "in.shikshavertex.attendance"
         minSdk = 28
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
         buildConfigField("String", "API_BASE_URL", literal(attendanceApiUrl()))
     }
     buildFeatures { buildConfig = true }

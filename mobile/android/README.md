@@ -80,7 +80,7 @@ Open this directory in Android Studio with Android SDK 35/build-tools 35.0.0 and
 ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Build outputs and local SDK configuration are ignored. Distribute only a release APK/AAB signed with a private release key after configuring Firebase, the production API, passkey RP/origins and asset links. The debug APK includes Firebase configuration but still needs the hosted API setting; it is a development build, not a deployed attendance service.
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Build outputs and local SDK configuration are ignored. Distribute only a release APK/AAB signed with a private release key after configuring Firebase, the production API, passkey RP/origins and asset links. The source includes public Firebase configuration and a validated hosted API default; the backend, installed signing certificate and passkey association must still agree. The debug APK is a development build, not a deployed attendance service.
 
 ## Tracking and report behavior
 

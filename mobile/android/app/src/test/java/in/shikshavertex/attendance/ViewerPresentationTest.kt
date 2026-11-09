@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ViewerPresentationTest {
+    @Test fun unknownOrContradictoryRowStatesNeverBecomeNotMarkedYet() {
+        assertTrue(ViewerPresentation.validRowState("not-marked", 0))
+        assertTrue(ViewerPresentation.validRowState("marked", 1))
+        for (status in listOf(null, "", "absent", "unknown")) assertFalse(ViewerPresentation.validRowState(status, 0))
+        assertFalse(ViewerPresentation.validRowState("marked", 0))
+        assertFalse(ViewerPresentation.validRowState("not-marked", 1))
+        assertFalse(ViewerPresentation.validRowState("not-marked", null))
+    }
+    @Test fun unavailableTimestampsDoNotGetAnInventedTimeZoneSuffix() {
+        assertEquals("Time unavailable", ViewerPresentation.checkInTime("invalid"))
+        assertEquals("10:30:00 AM IST", ViewerPresentation.checkInTime("2026-11-08T05:00:00Z"))
+    }
     private val setup = ViewerCheckIn("Morning", "2026-11-08T05:00:00Z", "self", "setup", false)
     private val employee = ViewerEmployee("Surya Deekshith", "surya_deekshith@shikshavertex.in", "Business Operations", "Bops", true, listOf(setup))
 

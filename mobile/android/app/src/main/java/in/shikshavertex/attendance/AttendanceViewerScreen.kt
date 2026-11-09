@@ -33,6 +33,7 @@ class AttendanceViewerScreen(
     selectedDate: String,
     selectedEventId: String,
     private val actions: AttendanceViewerActions,
+    initialFilters: ViewerFilters = ViewerFilters(),
 ) {
     private val ui = AttendanceUi(context)
     private val content = ui.canvas().apply { setPadding(ui.dp(18), ui.dp(16), ui.dp(18), ui.dp(20)) }
@@ -42,11 +43,11 @@ class AttendanceViewerScreen(
     private val loadedSession = selectedEventId
     private var pendingDate = selectedDate
     private var pendingSession = selectedEventId
-    private var query = ""
-    private var department = ""
-    private var team = ""
-    private var status = ViewerStatusFilter.ALL
-    private var mode = ViewerModeFilter.ALL
+    private var query = initialFilters.query
+    private var department = initialFilters.department
+    private var team = initialFilters.team
+    private var status = initialFilters.status
+    private var mode = initialFilters.mode
     private var pendingLoad = false
     private var busy = false
     private val events = report.optJSONArray("events")?.let { values -> (0 until values.length()).map { values.getJSONObject(it) } } ?: emptyList()
@@ -70,6 +71,7 @@ class AttendanceViewerScreen(
     private lateinit var refresh: Button
     private lateinit var dateButton: Button
     private lateinit var sessionPicker: Spinner
+    private lateinit var filterCard: LinearLayout
     val root: View = ScrollView(context).apply {
         isFillViewport = true
         setBackgroundColor(AttendanceUi.CANVAS)
@@ -103,6 +105,7 @@ class AttendanceViewerScreen(
         metric(metrics, "Not marked yet", totals?.optInt("notMarked") ?: employees.count { !it.marked }, AttendanceUi.AMBER)
         ui.space(content, 8)
         content.addView(ui.text("Current approved registered accounts and historical check-ins. Unregistered roster entries are excluded; not marked is not an absence or leave decision.", 12f, AttendanceUi.MUTED))
+        content.addView(ui.text("Counts describe the loaded date/session. Search and list filters do not change these totals.", 12f, AttendanceUi.MUTED))
 
         val scope = ui.card(content)
         ui.section(scope, "Attendance period", "Choose a date and session, then refresh.")
@@ -125,8 +128,13 @@ class AttendanceViewerScreen(
         updateScopeCaption()
 
         val filters = ui.card(content)
+        filterCard = filters
         ui.section(filters, "Find an employee")
+        filters.addView(ui.text("Verification-mode filters show recorded check-ins only. Not marked yet is never an absence decision.", 12f, AttendanceUi.MUTED))
         val search = ui.field(filters, "Search name, work email, department or team")
+        search.setText(query)
+        search.id = View.generateViewId()
+        (filters.getChildAt(filters.indexOfChild(search) - 1) as TextView).labelFor = search.id
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { query = s?.toString() ?: ""; drawRows() }
@@ -156,9 +164,16 @@ class AttendanceViewerScreen(
         filters.addView(more); controls.add(filterToggle)
         val departments = employees.map { it.department }.filter { it.isNotBlank() }.distinct().sorted()
         val teams = employees.map { it.team }.filter { it.isNotBlank() }.distinct().sorted()
-        selector(more, "Department", listOf("All departments") + departments) { department = if (it > 0) departments[it - 1] else ""; drawRows() }
-        selector(more, "Team", listOf("All teams") + teams) { team = if (it > 0) teams[it - 1] else ""; drawRows() }
-        selector(more, "Verification mode", listOf("All modes", "Setup mode", "Onsite mode", "Committee override", "Legacy / unavailable")) { mode = ViewerModeFilter.values()[it]; drawRows() }
+        if (department !in departments) department = ""
+        if (team !in teams) team = ""
+        val departmentPicker = selector(more, "Department", listOf("All departments") + departments, departments.indexOf(department) + 1) { department = if (it > 0) departments[it - 1] else ""; drawRows() }
+        val teamPicker = selector(more, "Team", listOf("All teams") + teams, teams.indexOf(team) + 1) { team = if (it > 0) teams[it - 1] else ""; drawRows() }
+        val modePicker = selector(more, "Verification mode", listOf("All modes", "Setup mode", "Onsite mode", "Committee override", "Legacy / unavailable"), mode.ordinal) { mode = ViewerModeFilter.values()[it]; drawRows() }
+        ui.button(filters, "Clear list filters") {
+            query = ""; department = ""; team = ""; status = ViewerStatusFilter.ALL; mode = ViewerModeFilter.ALL
+            search.text.clear(); departmentPicker.setSelection(0); teamPicker.setSelection(0); modePicker.setSelection(0)
+            updateStatusButtons(); drawRows()
+        }.also { controls.add(it) }
 
         resultLabel = ui.text("", 13f, AttendanceUi.MUTED, true)
         content.addView(resultLabel)
@@ -194,7 +209,7 @@ class AttendanceViewerScreen(
             setSelection(selected)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
-                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) { changed(position) }
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) { if (selectedItemPosition == position) changed(position) }
             }
             controls.add(this)
         }
@@ -271,7 +286,7 @@ class AttendanceViewerScreen(
         for (check in checks) {
             ui.space(card, 8)
             card.addView(ui.text(check.session.ifBlank { "Attendance session" }, 13f, AttendanceUi.INK, true))
-            card.addView(ui.text(ViewerPresentation.time(check.timestamp) + " IST", 19f, AttendanceUi.INDIGO, true).apply { fontFeatureSettings = "tnum" })
+            card.addView(ui.text(ViewerPresentation.checkInTime(check.timestamp), 19f, AttendanceUi.INDIGO, true).apply { fontFeatureSettings = "tnum" })
             card.addView(ui.text(ViewerPresentation.evidence(check), 12f, if (check.locationChecked && check.method !in listOf("committee", "manual") && check.mode == "onsite") AttendanceUi.GREEN else AttendanceUi.MUTED))
             if (check.phoneVerified) ui.chip(card, "Phone verified", Tone.SUCCESS)
             if (check.venueWifiObserved) ui.chip(card, "Venue Wi-Fi observed", Tone.NEUTRAL)
@@ -279,6 +294,7 @@ class AttendanceViewerScreen(
     }
 
     private fun rounded(fill: Int, stroke: Int) = GradientDrawable().apply { setColor(fill); cornerRadius = ui.dp(12).toFloat(); setStroke(ui.dp(1), stroke) }
+    fun currentFilters() = ViewerFilters(query, department, team, status, mode)
 
     fun setBusy(value: Boolean) {
         busy = value
@@ -291,13 +307,20 @@ class AttendanceViewerScreen(
     }
 
     fun showMessage(value: String) {
+        message.setTextColor(AttendanceUi.RED)
         message.text = value
         message.visibility = if (value.isBlank()) View.GONE else View.VISIBLE
         if (value.isNotBlank()) {
             pendingLoad = true
             if (::list.isInitialized) { list.removeAllViews(); list.visibility = View.GONE }
             if (::metrics.isInitialized) metrics.visibility = View.GONE
+            if (::filterCard.isInitialized) filterCard.visibility = View.GONE
             if (::resultLabel.isInitialized) resultLabel.text = "Records hidden. Refresh attendance to retry."
         }
     }
+    fun showNotice(value: String) {
+        message.setTextColor(AttendanceUi.GREEN); message.text = value
+        message.visibility = if (value.isBlank()) View.GONE else View.VISIBLE
+    }
+
 }

@@ -1,4 +1,17 @@
-# Android attendance: first two views
+# Completed interface review
+
+The completed work is grouped into one review branch. Start with the [integration review and deployment/signing blockers](../integration-review.md). Screens use the shared Inter, indigo/royal-blue, white-card palette while preserving authentication, permission checks and existing APIs.
+
+| Area | Screen review |
+| --- | --- |
+| Android | [Sign in and registration](android-auth-screen.md), [email verification](android-verification-screen.md), [HR approval status](android-approval-screen.md) |
+| Android | [Employee dashboard](android-employee-dashboard-review.md), [location sharing](android-location-sharing-card.md), [HR controls](android-hr-controls-screen.md), [attendance viewer](android-attendance-viewer-review.md) |
+| Web | [My Attendance History](web-my-attendance-history.md), [directory and approvals](web-employee-directory-approvals.md), [HR sessions](web-hr-session-controls.md) |
+| Web | [All-employees attendance and CSV](web-all-employees-attendance.md), [movement report](web-movement-report.md) |
+
+Android movement navigation now opens `MovementReportScreen` with a checked account/date/cutoff, Back/Refresh actions and explicit unknown gaps; it no longer opens the legacy text dialog. Native and physical-phone validation limits are recorded in the integration review. The older two-screen reference below is retained as an earlier design artifact, not the current implementation scope.
+
+# Earlier Android two-screen design reference
 
 This iteration implements the **Android Employee Attendance Dashboard** and **All-Employees Attendance Viewer** from the supplied design brief. Other onboarding, HR management and web layouts are reserved for later iterations.
 

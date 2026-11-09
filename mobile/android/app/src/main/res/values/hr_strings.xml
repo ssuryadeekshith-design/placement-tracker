@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hr_match_none">Select a profile, then confirm the identity match.</string>
+    <string name="hr_match_summary">Selected profile: %1$s · %2$s\n%3$s · %4$s\n%5$s</string>
+    <string name="hr_match_confirm">I have checked this applicant’s identity and confirm the selected directory profile belongs to them.</string>
+    <string name="hr_unavailable">HR data needs refresh</string>
+    <string name="hr_unavailable_help">The latest session and approval data could not be confirmed. Refresh HR controls before making another change.</string>
+    <string name="hr_rejection_help">Give a clear reason of 5–300 characters. Rejection does not approve or link an account.</string>
+</resources>

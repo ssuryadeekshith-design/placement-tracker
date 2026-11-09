@@ -633,3 +633,18 @@ test('attendance report filters date/session, counts registered accounts, preser
     assert.equal((await get(path)).status, 400, path);
   }
 });
+
+test('HR manual-target metadata distinguishes approved employees from viewer-only accounts without hiding history identities', async t => {
+  const f = await fixture(t);
+  f.config.attendanceViewerEmails = loadConfig({}).attendanceViewerEmails;
+  await f.session(); await f.session('pallavi');
+  const admin = await f.session('committee');
+  const result = await f.request('/students', { token: 'committee', cookie: admin.cookie });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.find(user => user.uid === 'alice').attendanceEligible, true);
+  assert.equal(result.data.find(user => user.uid === 'pallavi').attendanceEligible, false);
+  await f.db.collection('AllowedEmails').doc(ALICE).set({ enabled: false }, { merge: true });
+  const updated = await f.request('/students', { token: 'committee', cookie: admin.cookie });
+  assert.equal(updated.data.find(user => user.uid === 'alice').attendanceEligible, false);
+  assert.equal(updated.data.some(user => user.uid === 'pallavi'), true);
+});

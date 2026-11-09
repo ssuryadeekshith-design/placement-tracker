@@ -1,24 +1,17 @@
 package `in`.shikshavertex.attendance
 
 import android.Manifest
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Spinner
-import android.widget.ArrayAdapter
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -54,25 +47,37 @@ class MainActivity : FragmentActivity() {
     private var actionJob: Job? = null
     private var policyJob: Job? = null
     private var policyLoaded = false
-    private var reportDialog: AlertDialog? = null
     private lateinit var venueMonitor: VenueMonitor
     private var session: JSONObject? = null
     private var registeredPasskey = false
     private var biometricConfigured = false
     private var pendingPermissions: (() -> Unit)? = null
+    private var pendingSharingPermission: Long? = null
+    private var sharingStartJob: Job? = null
+    private var sharingStartToken: Long? = null
     private val buttons = mutableListOf<Button>()
     private var trackingLabel: TextView? = null
     private var dashboardScreen: EmployeeDashboardScreen? = null
+    private var lastDashboardModel: EmployeeDashboardModel? = null
+    private var authScreen: AuthScreen? = null
+    private var verificationScreen: VerificationScreen? = null
+    private var verificationJob: Job? = null
     private var viewerScreen: AttendanceViewerScreen? = null
     private var designedBusy: ((Boolean) -> Unit)? = null
     private var designedMessage: ((String) -> Unit)? = null
+    private var designedNotice: ((String) -> Unit)? = null
     private var preferredAttendanceSession = ""
     private val savedReceipts = mutableMapOf<String, JSONObject>()
     private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val action = pendingPermissions
-        pendingPermissions = null
-        if (grants.values.all { it }) action?.invoke()
-        else showMessage("Permission was not granted. No tracking or check-in has started. Enable precise location and notifications in Android settings as needed.")
+        val sharingToken = pendingSharingPermission
+        pendingPermissions = null; pendingSharingPermission = null
+        if (grants.values.all { it }) {
+            if (sharingToken == null || TrackingService.status.isCurrent(sharingToken)) action?.invoke()
+        } else if (sharingToken != null) {
+            TrackingService.status.failed(sharingToken, "Sharing did not start. Allow precise location and notifications, then give consent again when ready.")
+            sharingStartToken = null
+        } else showMessage("Permission was not granted. No tracking or check-in has started. Enable precise location and notifications in Android settings as needed.")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,7 +102,10 @@ class MainActivity : FragmentActivity() {
         }
         try { auth = FirebaseAuth.getInstance(); api = ApiClient(this) }
         catch (_: Exception) { text("The app configuration is invalid. Ask the administrator for a configured build. No tracking is running."); return }
-        lifecycleScope.launch { TrackingService.state.collect { trackingLabel?.text = it; dashboardScreen?.updateTracking(it) } }
+        lifecycleScope.launch { TrackingService.status.flow.collect {
+            trackingLabel?.text = it.forUser(auth.currentUser?.uid.orEmpty()).message
+            dashboardScreen?.updateSharing(it)
+        } }
         lockVenue("Loading attendance settings…")
     }
     override fun onResume() {
@@ -105,6 +113,7 @@ class MainActivity : FragmentActivity() {
         if (::api.isInitialized) refreshAccessPolicy()
     }
     override fun onPause() {
+        authScreen?.clearPassword()
         policyJob?.cancel()
         AttendanceWifi.stopObserving()
         if (::venueMonitor.isInitialized) venueMonitor.stop()
@@ -112,6 +121,10 @@ class MainActivity : FragmentActivity() {
             lockVenue("Return to the app to continue.")
         }
         super.onPause()
+    }
+    override fun onDestroy() {
+        if (pendingSharingPermission != null || sharingStartJob?.isActive == true) stopDailySharing()
+        super.onDestroy()
     }
     private fun refreshAccessPolicy() {
         policyJob?.cancel()
@@ -139,7 +152,7 @@ class MainActivity : FragmentActivity() {
         val wasUnlocked = venueUnlocked
         if (wasUnlocked && AttendancePolicyState.current.onsiteRequired && ::api.isInitialized && !ceremonyInProgress) lifecycleScope.launch { runCatching { api.json("/access/lock", "POST", JSONObject()) } }
         venueUnlocked = false; venueRevision++; if (!ceremonyInProgress) actionJob?.cancel(); busy = false
-        VenueAccessState.lock(); reportDialog?.dismiss(); reportDialog = null
+        VenueAccessState.lock()
         layout(); heading(if (policyLoaded && AttendancePolicyState.current.onsiteRequired) "App locked — venue access required" else "Attendance access"); text(reason)
         if (policyLoaded && AttendancePolicyState.current.onsiteRequired) {
             text("Visit Srivari Arcade at 12.912773610440954, 77.62322878099566. Access requires a fresh, accurate location inside the 100 m venue area. GPS cannot identify the second floor.", 14f)
@@ -150,57 +163,51 @@ class MainActivity : FragmentActivity() {
             button("View venue on Maps") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) }
         } else button("Retry attendance settings") { refreshAccessPolicy() }
         button("Stop location sharing") {
-            stopService(Intent(this, TrackingService::class.java)); TrackingService.state.value = "Location tracking stopped on this phone."
-            lifecycleScope.launch { runCatching { api.json("/tracking/stop", "POST", JSONObject()) }; showMessage("Location sharing stopped on this phone.") }
+            stopDailySharing()
+            showNotice("Location sharing stopped on this phone. Server confirmation is separate.")
         }
         if (::auth.isInitialized && auth.currentUser != null) button("Sign out and stop sharing") {
-            stopService(Intent(this, TrackingService::class.java)); auth.signOut(); session = null
-            showMessage("Signed out. The browser/app binding is retained.")
+            val stop = stopDailySharing()
+            lifecycleScope.launch { stop?.join(); auth.signOut(); session = null; showNotice("Signed out. The browser/app binding is retained.") }
         }
     }
 
     private fun layout() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
-        dashboardScreen = null; viewerScreen = null; designedBusy = null; designedMessage = null
-        buttons.clear()
-        trackingLabel = null
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(24), dp(22), dp(34))
-        }
-        setContentView(ScrollView(this).apply { isFillViewport = true; addView(content) })
-        text("SHIKSHA VERTEX · BENGALURU", 12f).setTextColor(Color.rgb(22, 112, 86))
-        heading("Attendance portal")
-        if (policyLoaded && !AttendancePolicyState.current.onsiteRequired) text("Temporary setup mode: attendance does not check GPS, venue Wi-Fi or a room code. Physical presence is not verified.", 14f)
-        message = text("").apply { setTextColor(Color.rgb(150, 48, 25)); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        dashboardScreen = null; viewerScreen = null; authScreen = null; verificationScreen = null; verificationJob?.cancel(); designedBusy = null; designedMessage = null; designedNotice = null
+        buttons.clear(); trackingLabel = null
+        val ui = AttendanceUi(this)
+        val body = ui.canvas()
+        body.addView(ui.text("SHIKSHAVERTEX", 12f, AttendanceUi.INDIGO, true))
+        ui.space(body, 18)
+        content = ui.card(body)
+        setContentView(ScrollView(this).apply { isFillViewport = true; fitsSystemWindows = true; addView(body) })
+        heading("Employee workspace")
+        if (policyLoaded && !AttendancePolicyState.current.onsiteRequired) ui.banner(content, "Temporary setup mode", "Attendance does not check GPS, venue Wi-Fi or a room code. Physical presence is unverified.", Tone.WARNING)
+        message = text("").apply { setTextColor(AttendanceUi.RED); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
     }
-    private fun heading(value: String) = text(value, 25f).apply { setPadding(0, dp(12), 0, dp(10)); setTextColor(Color.rgb(23, 49, 45)) }
-    private fun text(value: String, size: Float = 15f): TextView = TextView(this).apply {
-        text = value; textSize = size; setTextColor(Color.rgb(65, 82, 75)); setLineSpacing(dp(4).toFloat(), 1f)
+    private fun heading(value: String) = AttendanceUi(this).text(value, 24f, AttendanceUi.INDIGO, true).apply { setPadding(0, dp(10), 0, dp(12)); content.addView(this) }
+    private fun text(value: String, size: Float = 15f): TextView = AttendanceUi(this).text(value, size).apply {
         setPadding(0, dp(6), 0, dp(8)); content.addView(this)
     }
-    private fun input(label: String, password: Boolean = false): EditText {
-        text(label, 14f)
-        return EditText(this).apply {
-            hint = label; contentDescription = label; isSingleLine = true
-            inputType = if (password) android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD else android.text.InputType.TYPE_CLASS_TEXT
-            content.addView(this, LinearLayout.LayoutParams(-1, dp(54)))
-        }
-    }
-    private fun button(label: String, action: () -> Unit): Button = Button(this).apply {
-        text = label; isAllCaps = false; minHeight = dp(52); setTextColor(Color.rgb(22, 112, 86))
-        setOnClickListener { if (!busy) action() }
-        content.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }); buttons.add(this)
-    }
+    private fun button(label: String, action: () -> Unit): Button = AttendanceUi(this).button(content, label, label.contains("retry", true) || label.startsWith("Allow")) {
+        if (!busy) action()
+    }.also { buttons.add(it) }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun showMessage(value: String) {
         val display = designedMessage
-        if (display != null) display(value) else message.text = value
+        if (display != null) display(value) else { message.setTextColor(AttendanceUi.RED); message.text = value }
     }
-    private fun mountDesigned(view: View, setBusy: (Boolean) -> Unit, displayMessage: (String) -> Unit) {
+    private fun showNotice(value: String) {
+        val display = designedNotice
+        if (display != null) display(value) else { message.setTextColor(AttendanceUi.GREEN); message.text = value }
+    }
+    private fun mountDesigned(view: View, setBusy: (Boolean) -> Unit, displayMessage: (String) -> Unit, displayNotice: (String) -> Unit = displayMessage) {
         restoreAfterPrompt = false
+        if (verificationScreen?.root !== view) { verificationJob?.cancel(); verificationScreen = null }
+        if (authScreen?.root !== view) authScreen = null
         buttons.clear(); trackingLabel = null
-        designedBusy = setBusy; designedMessage = displayMessage
+        designedBusy = setBusy; designedMessage = displayMessage; designedNotice = displayNotice
         view.fitsSystemWindows = false
         val left = view.paddingLeft; val top = view.paddingTop
         val right = view.paddingRight; val bottom = view.paddingBottom
@@ -222,7 +229,7 @@ class MainActivity : FragmentActivity() {
             try { action() } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
                 if (venueUnlocked && generation == actionGeneration) {
                     if (restoreAfterPrompt) { restoreAfterPrompt = false; runCatching { renderDashboard() } }
-                    showMessage(error.message ?: "The operation failed. Please try again.")
+                    showMessage(friendlyError(error))
                 }
             } finally { if (generation == actionGeneration) { busy = false; buttons.forEach { it.isEnabled = true }; designedBusy?.invoke(false) } }
         }
@@ -243,41 +250,92 @@ class MainActivity : FragmentActivity() {
         mountDesigned(root, { loading -> progress.visibility = if (loading) View.VISIBLE else View.GONE; retry.isEnabled = !loading; signOut.isEnabled = !loading }, { value -> error.text = value; if (value.isNotBlank()) progress.visibility = View.GONE })
     }
 
+    private fun friendlyError(error: Exception): String = when (error) {
+        is androidx.credentials.exceptions.GetCredentialCancellationException,
+        is androidx.credentials.exceptions.CreateCredentialCancellationException -> "Phone verification was cancelled. Try again when you are ready."
+        is androidx.credentials.exceptions.NoCredentialException -> "No attendance passkey was available. Use the phone or passkey you enrolled, or contact HR for help."
+        is com.google.firebase.auth.FirebaseAuthInvalidUserException -> if (error.errorCode == "ERROR_USER_DISABLED")
+            "This account is disabled. Contact HR for account recovery."
+            else "Email or password was not accepted. Register if this is your first time, or reset your app password."
+        is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> if (error.errorCode == "ERROR_INVALID_EMAIL")
+            "Enter a valid work email address."
+            else "Email or password was not accepted. Register if this is your first time, or reset your app password."
+        is com.google.firebase.auth.FirebaseAuthUserCollisionException -> "This email already has an attendance account. Sign in or reset your app password."
+        is com.google.firebase.FirebaseNetworkException -> "Could not connect. Check your internet connection and try again."
+        is com.google.firebase.FirebaseTooManyRequestsException -> "Too many attempts. Wait a little before trying again."
+        else -> error.message ?: "The operation failed. Please try again."
+    }
     private fun renderLogin() {
         if (!venueUnlocked) return
-        layout()
-        text("Use your Shiksha Vertex work email. Verify ownership, then request HR approval before marking attendance.")
-        val binding = getSharedPreferences("browser_binding", MODE_PRIVATE).getString("bound_email", null)
-        if (binding != null) text("This app profile was first registered to $binding. Signing out keeps its binding. Clearing app data or reinstalling resets this profile; it is not a permanent physical-phone identifier.", 13f)
-        val email = input("Email address").apply { inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS; setText(binding ?: "") }
-        val password = input("Password", true)
-        button("Sign in") { runAction {
-            auth.signInWithEmailAndPassword(email.text.toString().trim(), password.text.toString()).await()
-            password.text.clear()
-            auth.currentUser?.reload()?.await()
-            if (auth.currentUser?.isEmailVerified == true) establishSession() else renderVerification()
-        } }
-        button("Register and send verification email") { runAction {
-            val result = auth.createUserWithEmailAndPassword(email.text.toString().trim(), password.text.toString()).await()
-            result.user?.sendEmailVerification()?.await()
-            password.text.clear(); renderVerification(); showMessage("Verification email sent. Open its link, then return here.")
-        } }
-        button("Reset password") { runAction {
-            auth.sendPasswordResetEmail(email.text.toString().trim()).await()
-            showMessage("If this email has an account, a password reset link has been sent.")
-        } }
-        text("Fingerprints and face templates never leave Android. Passkeys confirm the phone's user verification; Android may use a device PIN instead of biometrics. GPS cannot identify the second floor.", 13f)
+        verificationJob?.cancel(); verificationScreen = null; dashboardScreen = null; viewerScreen = null
+        val binding = getSharedPreferences("browser_binding", MODE_PRIVATE).getString("bound_email", "").orEmpty()
+        val screen = AuthScreen(this, binding, AuthActions(
+            onSignIn = { email, password -> runAction {
+                auth.signInWithEmailAndPassword(email, password).await(); authScreen?.clearPassword()
+                auth.currentUser?.reload()?.await()
+                if (auth.currentUser?.isEmailVerified == true) establishSession() else renderVerification()
+            } },
+            onRegister = { email, password -> runAction {
+                auth.createUserWithEmailAndPassword(email, password).await(); authScreen?.clearPassword()
+                renderVerification()
+                sendVerificationEmail()
+            } },
+            onReset = { email -> runAction { auth.sendPasswordResetEmail(email).await(); showNotice("If this email has an account, a reset link has been sent. Check your inbox and spam folder, then return to sign in.") } }
+        ))
+        authScreen = screen
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
+    }
+    private fun verificationWait(): Int {
+        val uid = auth.currentUser?.uid ?: return 0
+        val saved = getSharedPreferences("verification_cooldown", MODE_PRIVATE)
+        if (!saved.contains("$uid:epoch")) return 0
+        return VerificationCooldown(saved.getLong("$uid:epoch", 0), saved.getLong("$uid:elapsed", 0))
+            .secondsRemaining(System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime())
+    }
+    private fun startVerificationCooldown(uid: String) {
+        getSharedPreferences("verification_cooldown", MODE_PRIVATE).edit()
+            .putLong("$uid:epoch", System.currentTimeMillis())
+            .putLong("$uid:elapsed", android.os.SystemClock.elapsedRealtime()).apply()
+        verificationScreen?.updateCooldown(verificationWait())
+    }
+    private suspend fun sendVerificationEmail() {
+        val user = auth.currentUser ?: throw IllegalStateException("Your sign-in has ended. Sign out and sign in again before requesting verification.")
+        verificationScreen?.setOperation(VerificationOperation.SENDING)
+        try {
+            user.sendEmailVerification().await()
+        } catch (error: com.google.firebase.FirebaseTooManyRequestsException) {
+            startVerificationCooldown(user.uid)
+            throw IllegalStateException("Firebase has temporarily limited verification requests. Wait before retrying; its limit may last longer than the displayed cooldown.", error)
+        }
+        startVerificationCooldown(user.uid)
+        showNotice("Verification email sent. Check your inbox and spam folder. Open its link, then return and check your status.")
+    }
+    private suspend fun checkEmailVerification() {
+        val user = auth.currentUser ?: throw IllegalStateException("Your sign-in has ended. Sign out and sign in again to check verification.")
+        verificationScreen?.setOperation(VerificationOperation.CHECKING)
+        user.reload().await()
+        val refreshed = auth.currentUser
+        check(refreshed?.uid == user.uid) { "Your account changed. Sign in again to check verification." }
+        if (refreshed?.isEmailVerified == true) {
+            verificationScreen?.markVerified()
+            establishSession()
+        } else verificationScreen?.showUnverified()
     }
     private fun renderVerification() {
         if (!venueUnlocked) return
-        layout()
-        text("Verify your email: ${auth.currentUser?.email ?: ""}. Open the email verification link before continuing.")
-        button("I have verified my email") { runAction {
-            auth.currentUser?.reload()?.await()
-            if (auth.currentUser?.isEmailVerified == true) establishSession() else showMessage("Email is not verified yet. Check your inbox and spam folder.")
-        } }
-        button("Resend verification email") { runAction { auth.currentUser?.sendEmailVerification()?.await(); showMessage("Verification email sent.") } }
-        button("Sign out") { auth.signOut(); renderLogin() }
+        authScreen = null; dashboardScreen = null; viewerScreen = null; verificationJob?.cancel()
+        val screen = VerificationScreen(this, auth.currentUser?.email.orEmpty(), verificationWait(), VerificationActions(
+            onVerified = { runAction { checkEmailVerification() } },
+            onResend = { if (verificationWait() == 0) runAction {
+                if (auth.currentUser?.isEmailVerified == true) checkEmailVerification() else sendVerificationEmail()
+            } },
+            onSignOut = { auth.signOut(); session = null; renderLogin() }
+        ))
+        verificationScreen = screen
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
+        verificationJob = lifecycleScope.launch {
+            while (verificationScreen === screen && venueUnlocked) { screen.updateCooldown(verificationWait()); kotlinx.coroutines.delay(1000) }
+        }
     }
     private suspend fun establishSession() {
         if (!venueUnlocked) return
@@ -299,23 +357,44 @@ class MainActivity : FragmentActivity() {
     }
     private fun renderEmployeeApproval(status: JSONObject) {
         if (!venueUnlocked) return
-        layout(); heading("Employee access approval")
-        text(auth.currentUser?.email ?: "Verified work email")
-        text("Use your verified @shikshavertex.in email. HR must approve your identity before you can mark attendance.")
-        when (status.optString("status")) {
-            "pending" -> text("Your request is pending HR approval. Attendance access is not yet available.")
-            "rejected" -> text("Request rejected: ${status.optString("reason")}. Contact HR for review.")
-            "access-unavailable" -> text("Your account requires HR recovery. A new registration cannot restore revoked access.")
-            else -> {
-                val name = input("Full employee name")
-                button("Request HR approval") { runAction {
-                    api.json("/registration/request", "POST", JSONObject().put("fullName", name.text.toString().trim()))
-                    renderEmployeeApproval(api.json("/registration/status"))
-                } }
-            }
-        }
-        button("Check approval status") { runAction { establishSession() } }
-        button("Sign out") { auth.signOut(); session = null; renderLogin() }
+        verificationJob?.cancel(); verificationScreen = null; authScreen = null; dashboardScreen = null; viewerScreen = null
+        lateinit var screen: EmployeeApprovalScreen
+        screen = EmployeeApprovalScreen(this, auth.currentUser?.email.orEmpty(), status, ApprovalActions(
+            onRequest = { name -> runAction {
+                screen.setOperation(ApprovalOperation.REQUESTING)
+                try {
+                    api.json("/registration/request", "POST", JSONObject().put("fullName", name))
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    if (error is ApiException && error.status == 400) throw error
+                    screen.markStatusUnavailable()
+                    throw IllegalStateException("The request could not be confirmed. Check approval status before trying again. ${friendlyError(error)}", error)
+                }
+                // A successful POST must not leave a duplicate form if the following GET fails.
+                screen.markStatusUnavailable(); screen.setOperation(ApprovalOperation.CHECKING)
+                val latest = try { api.json("/registration/status") }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    throw IllegalStateException("The request service responded, but the latest status could not be loaded. Tap Check approval status. ${friendlyError(error)}", error)
+                }
+                renderEmployeeApproval(latest)
+                when (ApprovalPresentation.state(latest.opt("status") as? String, latest.opt("approved") as? Boolean)) {
+                    EmployeeApprovalState.APPROVED -> establishSession()
+                    EmployeeApprovalState.PENDING -> showNotice("Your request is pending HR review. Check your status after HR reviews your employee profile.")
+                    else -> Unit
+                }
+            } },
+            onRefresh = { runAction {
+                screen.setOperation(ApprovalOperation.CHECKING)
+                val latest = try { api.json("/registration/status") }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { screen.markStatusUnavailable(); throw error }
+                renderEmployeeApproval(latest)
+                if (ApprovalPresentation.state(latest.opt("status") as? String, latest.opt("approved") as? Boolean) == EmployeeApprovalState.APPROVED) establishSession()
+            } },
+            onSignOut = { auth.signOut(); session = null; renderLogin() }
+        ), emailVerified = auth.currentUser?.isEmailVerified == true)
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
     private suspend fun renderDashboard() {
         if (!venueUnlocked) return
@@ -346,25 +425,40 @@ class MainActivity : FragmentActivity() {
             employee.optString("fullName"), employee.optString("email"), employee.optString("department"), employee.optString("team"),
             session?.optJSONObject("venue")?.optString("address") ?: "2nd floor, Srivari Arcade, Bengaluru",
             onsite, session?.optJSONObject("venue")?.optBoolean("requiresRoomCode", true) != false,
-            registeredPasskey, biometricConfigured, sessions.map { DashboardSession(it.getString("id"), it.optString("title"), it.optString("date")) }, todayReceipts,
+            registeredPasskey, biometricConfigured, sessions.map { DashboardSession(it.getString("id"), it.optString("title"), it.optString("date"), it.opt("checkInOpen") == true) }, todayReceipts,
             if (!onsite) "Not required" else if (runCatching { VenueAccessState.current() }.isSuccess) "Confirmed now" else "Not confirmed",
             if (!onsite) "Not required" else if (runCatching { AttendanceWifi.requireConnected(this) }.isSuccess) "Connected now" else "Not confirmed",
-            TrackingService.state.value, employee.optBoolean("canViewAllAttendance"), employee.optString("role") == "committee", preferredAttendanceSession)
+            TrackingService.status.current.forUser(uid).message, employee.optBoolean("canViewAllAttendance"), employee.optString("role") == "committee", preferredAttendanceSession,
+            employeeUid = uid, sharingSnapshot = TrackingService.status.current)
+        mountDashboard(model)
+    }
+    private suspend fun refreshDashboard() {
+        preferredAttendanceSession = dashboardScreen?.currentSessionId() ?: preferredAttendanceSession
+        try { renderDashboard() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { dashboardScreen?.invalidateCheckIn(); throw error }
+    }
+    private fun mountDashboard(model: EmployeeDashboardModel) {
+        lastDashboardModel = model
         val screen = EmployeeDashboardScreen(this, model, EmployeeDashboardActions(
-            onRefresh = { runAction { renderDashboard() } },
-            onEnroll = { runAction { enrollPasskey(); renderDashboard(); showMessage("Phone passkey enrolled.") } },
+            onRefresh = { runAction { refreshDashboard() } },
+            onEnroll = { runAction { enrollPasskey(); renderDashboard(); showNotice("Phone passkey enrolled.") } },
             onSubmit = { eventId, consent, code -> submitAttendance(eventId, consent, code) },
             onViewAttendance = { runAction { renderAttendanceReport() } },
-            onHrControls = { renderHrControls(allEvents) },
+            onHrControls = { runAction { renderHrControls() } },
             onStartSharing = { consent -> startDailySharing(consent) },
-            onStopSharing = { runAction { stopService(Intent(this, TrackingService::class.java)); TrackingService.state.value = "Location sharing stopped on this phone."; runCatching { api.json("/tracking/stop", "POST", JSONObject()) }.onFailure { showMessage("Sharing stopped on this phone. The server could not be reached.") } } },
-            onMovementReport = { runAction { showReport(api.json("/tracking/report?date=${Workday.date()}")) } },
+            onStopSharing = { stopDailySharing() },
+            onMovementReport = { runAction { renderMovementReport() } },
             onSignOut = { signOutAccount() },
             onMaps = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) },
-            onCheckWifi = { runAction { AttendanceWifi.requireConnected(this); renderDashboard(); showMessage("Connected to venue Wi-Fi at this check. It is checked again on submission.") } }
+            onCheckWifi = { runAction {
+                try { AttendanceWifi.requireConnected(this); refreshDashboard(); showNotice("Connected to venue Wi-Fi at this check. It is checked again on submission.") }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { dashboardScreen?.invalidateCheckIn(); throw error }
+            } }
         ))
         dashboardScreen = screen; viewerScreen = null
-        mountDesigned(screen.root, screen::setBusy, screen::showMessage)
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
     private fun submitAttendance(eventId: String, consent: Boolean, roomCode: String) {
         if (!consent) { showMessage("Confirm the attendance statement first."); return }
@@ -385,12 +479,23 @@ class MainActivity : FragmentActivity() {
             try { renderDashboard() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
-                showRecordedReceipt(record)
+                showRecordedReceipt(record, eventId)
             }
         } }
         if (onsite) requestPermissionsThen(false, submit) else submit()
     }
-    private fun showRecordedReceipt(record: JSONObject) {
+    private fun showRecordedReceipt(record: JSONObject, eventId: String) {
+        check(record.optString("uid") == auth.currentUser?.uid) { "Refresh attendance to load your own receipt." }
+        val model = lastDashboardModel
+        if (model != null && model.employeeUid == record.optString("uid") && model.events.any { it.id == eventId }) {
+            val receipt = DashboardReceipt(record.optString("timestamp"), record.optString("attendanceMode", "legacy"),
+                phoneVerified = record.optJSONObject("verification")?.optString("method") == "passkey-user-verification",
+                venueWifiObserved = record.optJSONObject("wifi")?.let { it.optString("ssid") == WifiRule.REQUIRED_SSID && it.optString("verification") == "native-client-observation" } == true)
+            mountDashboard(model.copy(receipts = model.receipts + (eventId to receipt), preferredSessionId = eventId,
+                refreshRequired = true, trackingStatus = TrackingService.status.current.message, sharingSnapshot = TrackingService.status.current))
+            showNotice("Attendance recorded. Your original receipt is shown. Refresh attendance when connected to confirm the latest dashboard settings.")
+            return
+        }
         layout(); heading("Attendance recorded")
         val firstTime = runCatching { DateTimeFormatter.ofPattern("d MMM yyyy · h:mm:ss a 'IST'").withZone(Workday.zone).format(Instant.parse(record.optString("timestamp"))) }.getOrDefault("Original record time unavailable")
         text("Original check-in: $firstTime")
@@ -401,79 +506,141 @@ class MainActivity : FragmentActivity() {
     private fun startDailySharing(consent: Boolean) {
         if (!consent) { showMessage("Read and agree to workday location sharing first."); return }
         if (!Workday.contains()) { showMessage("Sharing can start only from 10:30 AM to 8:30 PM, India time."); return }
-        requestPermissionsThen(true) { runAction {
-            if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) throw IllegalStateException("Enable notifications before starting sharing so its active status stays visible.")
-            api.json("/tracking/start", "POST", JSONObject().put("consent", true))
-            ContextCompat.startForegroundService(this, Intent(this, TrackingService::class.java).setAction(TrackingService.ACTION_START))
-            showMessage("Daily consent saved. The visible location service is starting.")
-        } }
+        if (busy || !venueUnlocked || pendingPermissions != null) { showMessage("Finish the current request before starting location sharing."); return }
+        val user = auth.currentUser
+        if (user?.isEmailVerified != true) { showMessage("Sign in and verify your email before starting sharing."); return }
+        val date = Workday.date()
+        val token = TrackingService.status.begin(user.uid, date)
+        if (token == null) { showMessage("A sharing operation is already running or its stop still needs confirmation."); return }
+        sharingStartToken = token; pendingSharingPermission = token
+        try {
+            requestPermissionsThen(true) {
+                if (TrackingService.status.isCurrent(token)) sharingStartJob = lifecycleScope.launch {
+                    try {
+                        awaitSharingStartReady(token, user.uid, date)
+                        TrackingService.status.starting(token, "Saving today's explicit location-sharing consent.")
+                        val response = api.json("/tracking/start", "POST", JSONObject().put("consent", true))
+                        val saved = response.optJSONObject("session")
+                        check(response.opt("withinWindow") == true && saved != null && saved.optString("date") == date && saved.has("stoppedAt") && saved.isNull("stoppedAt")) {
+                            "Today's location-sharing consent was not confirmed."
+                        }
+                        awaitSharingStartReady(token, user.uid, date)
+                        TrackingService.status.starting(token, "Consent confirmed. Starting the visible location service.")
+                        ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, TrackingService::class.java)
+                            .setAction(TrackingService.ACTION_START).putExtra(TrackingService.EXTRA_RUN_TOKEN, token))
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) {
+                        if (TrackingService.status.isCurrent(token)) {
+                            val stop = TrackingService.stopOnPhone(this@MainActivity, "Sharing did not start. ${friendlyError(error)}", true)
+                            TrackingService.confirmServerStop(this@MainActivity, stop, sharingStartJob)
+                        }
+                    } finally {
+                        if (sharingStartToken == token) { sharingStartToken = null; sharingStartJob = null }
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            pendingSharingPermission = null; sharingStartToken = null
+            TrackingService.status.failed(token, "Sharing did not start. ${friendlyError(error)}")
+        }
+    }
+    private suspend fun awaitSharingStartReady(token: Long, uid: String, date: String) {
+        val ready = kotlinx.coroutines.withTimeoutOrNull(30000) {
+            while (true) {
+                check(TrackingService.status.isCurrent(token)) { "The location-sharing start was cancelled." }
+                check(auth.currentUser?.uid == uid && auth.currentUser?.isEmailVerified == true) { "Your sign-in changed. Give consent again after signing in." }
+                check(Workday.contains() && Workday.date() == date) { "The location-sharing window ended. Give consent again during the next workday." }
+                if (venueUnlocked && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) break
+                kotlinx.coroutines.delay(100)
+            }
+            true
+        }
+        check(ready == true) { "Return to the app and allow venue access before starting location sharing." }
+        check(TrackingService.permissionsReady(this)) { "Allow precise location and notifications, including the sharing notification channel, before starting." }
+    }
+    private fun stopDailySharing(): Job? {
+        val starting = sharingStartJob
+        sharingStartJob = null; sharingStartToken = null
+        starting?.cancel()
+        if (pendingSharingPermission != null) { pendingPermissions = null; pendingSharingPermission = null }
+        val token = TrackingService.stopOnPhone(this)
+        return TrackingService.confirmServerStop(this, token, starting)
     }
     private fun signOutAccount() { runAction {
-        stopService(Intent(this, TrackingService::class.java)); TrackingService.state.value = "Tracking stopped. Signed out."
-        if (session?.optJSONObject("user")?.optString("role") != "attendance-viewer") runCatching { api.json("/tracking/stop", "POST", JSONObject()) }
-        auth.signOut(); session = null; savedReceipts.clear(); preferredAttendanceSession = ""; renderLogin()
+        if (session?.optJSONObject("user")?.optString("role") != "attendance-viewer" || TrackingService.status.current.collecting)
+            stopDailySharing()?.join()
+        auth.signOut(); session = null; savedReceipts.clear(); lastDashboardModel = null; preferredAttendanceSession = ""; renderLogin()
     } }
-    private fun renderHrControls(allEvents: List<JSONObject>) {
+    private suspend fun renderHrControls() {
         if (!venueUnlocked || session?.optJSONObject("user")?.optString("role") != "committee") return
-        layout(); heading("HR controls")
-        button("Back to my attendance") { runAction { renderDashboard() } }
-        button("Review employee approval requests") { runAction { showEmployeeRequests(api.array("/registration-requests"), api.array("/employees")) } }
-        val daily = allEvents.firstOrNull { it.optString("date") == Workday.date() && it.optString("title") == "Daily employee attendance" }
-        button("Open today's attendance") { runAction {
-            val latest = api.array("/events"); val today = Workday.date()
-            val existing = (0 until latest.length()).map { latest.getJSONObject(it) }.firstOrNull { it.optString("date") == today && it.optString("title") == "Daily employee attendance" }
-            val event = existing ?: api.json("/events", "POST", JSONObject().put("title", "Daily employee attendance").put("date", today).put("isMandatory", true))
-            api.json("/events/${event.getString("id")}", "PATCH", JSONObject().put("checkInOpen", true))
-            renderDashboard(); showMessage("Today's attendance is open.")
-        } }
-        if (daily?.optBoolean("checkInOpen") == true) button("Close today's attendance") { runAction {
-            api.json("/events/${daily.getString("id")}", "PATCH", JSONObject().put("checkInOpen", false))
-            renderDashboard(); showMessage("Today's attendance is closed.")
-        } }
+        val events = api.array("/events")
+        val requests = api.array("/registration-requests")
+        val employees = api.array("/employees")
+        val loadedDay = Workday.date()
+        val dailyEvents = (0 until events.length()).map { events.getJSONObject(it) }.filter { it.optString("date") == loadedDay && it.optString("title") == "Daily employee attendance" }
+        check(dailyEvents.size <= 1) { "Multiple daily attendance sessions need review in the web portal before changing today's attendance." }
+        val daily = dailyEvents.firstOrNull()
+        val desiredOpen = HrProfileMatch.desiredSessionState(daily?.opt("checkInOpen") == true)
+        lateinit var screen: HrControlsScreen
+        screen = HrControlsScreen(this, daily?.opt("checkInOpen") == true, requests, employees, HrActions(
+            onToggleSession = { runAction {
+                if (Workday.date() != loadedDay) {
+                    screen.markUnavailable(); renderHrControls()
+                    showMessage("The attendance day changed. Review today's session before changing it.")
+                } else saveHrChange(screen, if (desiredOpen) "Today's attendance is open." else "Today's attendance is closed. Existing records are preserved.") {
+                    val latest = api.array("/events")
+                    val matching = (0 until latest.length()).map { latest.getJSONObject(it) }.filter { it.optString("date") == loadedDay && it.optString("title") == "Daily employee attendance" }
+                    check(matching.size <= 1) { "Multiple daily sessions need review. Refresh HR controls." }
+                    val existing = matching.firstOrNull()
+                    check(daily == null || existing?.optString("id") == daily.optString("id")) { "The daily session changed. Refresh HR controls before changing it." }
+                    check(Workday.date() == loadedDay) { "The attendance day changed. Refresh HR controls." }
+                    val event = existing ?: api.json("/events", "POST", JSONObject().put("title", "Daily employee attendance").put("date", loadedDay).put("isMandatory", true))
+                    check(Workday.date() == loadedDay) { "The attendance day changed. Refresh HR controls." }
+                    // Apply the action the administrator saw, even if another admin already applied it.
+                    if (event.opt("checkInOpen") != desiredOpen)
+                        api.json("/events/${event.getString("id")}", "PATCH", JSONObject().put("checkInOpen", desiredOpen))
+                }
+            } },
+            onApprove = { requestId, employeeId -> runAction { saveHrChange(screen, "Employee approved. They can refresh their approval status.") {
+                api.json("/registration-requests/$requestId/approve", "POST", JSONObject().put("employeeId", employeeId))
+            } } },
+            onReject = { requestId, reason -> runAction { saveHrChange(screen, "Request rejected. No employee access was granted.") {
+                api.json("/registration-requests/$requestId/reject", "POST", JSONObject().put("reason", reason))
+            } } },
+            onRefresh = { runAction {
+                try { renderHrControls() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { screen.markUnavailable(); throw error }
+            } },
+            onBack = { runAction { renderDashboard() } }, onViewAttendance = { runAction { renderAttendanceReport() } }
+        ))
+        dashboardScreen = null; viewerScreen = null
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
-
-    private fun showEmployeeRequests(requests: org.json.JSONArray, employees: org.json.JSONArray) {
-        if (!venueUnlocked) return
-        if (requests.length() == 0) { showMessage("There are no pending employee requests."); return }
-        val labels = (0 until requests.length()).map { index ->
-            val item = requests.getJSONObject(index); "${item.optString("fullName")} — ${item.optString("email") }"
-        }.toTypedArray()
-        reportDialog = AlertDialog.Builder(this).setTitle("Pending employee requests").setItems(labels) { _, index ->
-            if (!venueUnlocked) return@setItems
-            val request = requests.getJSONObject(index)
-            val choices = (0 until employees.length()).map { employees.getJSONObject(it) }.filter {
-                it.optBoolean("active") && (it.isNull("uid") || !it.has("uid") || it.optString("uid") == request.optString("uid"))
-            }
-            val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(10), dp(20), dp(10)) }
-            body.addView(TextView(this).apply { text = "${request.optString("fullName")}\n${request.optString("email")}\nConfirm the employee identity before approving. A job title does not grant HR privileges." })
-            val picker = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                listOf("Select matching employee") + choices.map { "${it.optString("fullName")} · ${it.optString("department")}" }) }
-            body.addView(picker)
-            val reason = EditText(this).apply { hint = "Reason if rejecting (at least 5 characters)" }; body.addView(reason)
-            reportDialog = AlertDialog.Builder(this).setTitle("HR identity review").setView(body)
-                .setPositiveButton("Approve") { _, _ ->
-                    val selected = picker.selectedItemPosition - 1
-                    if (selected !in choices.indices) { showMessage("Select a matching employee, then reopen the request."); return@setPositiveButton }
-                    runAction {
-                        api.json("/registration-requests/${request.getString("id")}/approve", "POST", JSONObject().put("employeeId", choices[selected].getString("employeeId")))
-                        showMessage("Employee approved. They can refresh approval status and sign in.")
-                    }
-                }.setNeutralButton("Reject") { _, _ -> runAction {
-                    api.json("/registration-requests/${request.getString("id")}/reject", "POST", JSONObject().put("reason", reason.text.toString()))
-                    showMessage("Request rejected. No attendance access was granted.")
-                } }.setNegativeButton("Cancel", null).show()
-        }.setNegativeButton("Close", null).show()
+    private suspend fun saveHrChange(screen: HrControlsScreen, savedMessage: String, write: suspend () -> Unit) {
+        try { write() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            screen.markUnavailable()
+            throw IllegalStateException("The change could not be confirmed. Refresh HR controls before trying again. ${friendlyError(error)}", error)
+        }
+        screen.markUnavailable()
+        try { renderHrControls(); showNotice(savedMessage) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { showNotice("$savedMessage The change succeeded, but current HR data could not refresh. Use Refresh HR controls to continue.") }
     }
     private suspend fun renderAttendanceReport(date: String = Workday.date(), eventId: String = "") {
+        val filters = viewerScreen?.currentFilters() ?: ViewerFilters()
         val report = api.json("/attendance-report?date=${Uri.encode(date)}${if (eventId.isNotBlank()) "&eventId=${Uri.encode(eventId)}" else ""}")
+        ViewerReportValidator.validate(report, date, eventId)
         if (!venueUnlocked) return
         val screen = AttendanceViewerScreen(this, report, date, eventId, AttendanceViewerActions(
             onLoad = { day, event -> runAction { renderAttendanceReport(day, event) } },
             onBack = { if (session?.optJSONObject("user")?.optString("role") == "attendance-viewer") finish() else runAction { renderDashboard() } },
             onSignOut = { signOutAccount() }
-        ))
+        ), filters)
         viewerScreen = screen; dashboardScreen = null
-        mountDesigned(screen.root, screen::setBusy, screen::showMessage)
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
     private suspend fun enrollPasskey() {
         if (!venueUnlocked) return
@@ -513,43 +680,22 @@ class MainActivity : FragmentActivity() {
         val needed = mutableListOf<String>()
         if (!LocationAccess.precisePermission(this)) needed.addAll(listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         if (tracking && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.POST_NOTIFICATIONS)
-        if (needed.isEmpty()) action() else { pendingPermissions = action; permissionRequest.launch(needed.toTypedArray()) }
+        if (needed.isEmpty()) { pendingSharingPermission = null; action() }
+        else { pendingPermissions = action; permissionRequest.launch(needed.toTypedArray()) }
     }
-    private fun showReport(report: JSONObject) {
+    private suspend fun renderMovementReport(date: String = Workday.date()) {
+        val uid = auth.currentUser?.uid ?: error("Sign in before opening movement history.")
+        val report = api.json("/tracking/report?date=${Uri.encode(date)}")
+        check(auth.currentUser?.uid == uid) { "Your account changed. Reload your movement report." }
+        MovementReportValidator.validate(report, date, uid)
         if (!venueUnlocked) return
-        val format = DateTimeFormatter.ofPattern("h:mm a").withZone(Workday.zone)
-        fun time(value: String): String = runCatching { format.format(Instant.parse(value)) }.getOrDefault(value)
-        fun minutes(value: Long) = "${value / 60} min"
-        val totals = report.optJSONObject("totals") ?: JSONObject()
-        val description = StringBuilder("${report.optString("date")} · India time\n\n")
-            .append("Inside venue: ${minutes(totals.optLong("insideSeconds"))}\n")
-            .append("Away: ${minutes(totals.optLong("awaySeconds"))}\n")
-            .append("Unknown/unobserved: ${minutes(totals.optLong("unknownSeconds"))}\n\n")
-        val excursions = report.optJSONArray("excursions")
-        if (excursions != null) for (index in 0 until excursions.length()) {
-            val excursion = excursions.getJSONObject(index)
-            description.append("Away observed from ${time(excursion.optString("leftAt"))}")
-            if (!excursion.isNull("returnedAt")) description.append(" to ${time(excursion.optString("returnedAt"))}")
-            description.append(" · ${minutes(excursion.optLong("durationSeconds"))} (estimated)\n")
-        }
-        val visits = report.optJSONArray("visits")
-        if (visits != null) for (index in 0 until visits.length()) {
-            val visit = visits.getJSONObject(index)
-            description.append("\n${visit.optString("label", "Approximate stop")}: ${visit.optDouble("latitude")}, ${visit.optDouble("longitude")}\n")
-                .append("${time(visit.optString("startAt"))}–${time(visit.optString("endAt"))} · ${minutes(visit.optLong("dwellSeconds"))} observed\n")
-        }
-        description.append("\nSamples estimate visits and boundary crossings. Gaps are not assigned to any place. Coordinates do not identify a business or address without a configured map/geocoding provider.")
-        val reportBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(12), dp(20), dp(12)) }
-        reportBody.addView(TextView(this).apply { text = description; textSize = 15f; setTextIsSelectable(true) })
-        if (visits != null) for (index in 0 until visits.length()) {
-            val visit = visits.getJSONObject(index)
-            val map = "https://www.google.com/maps/search/?api=1&query=${visit.optDouble("latitude")},${visit.optDouble("longitude")}"
-            reportBody.addView(Button(this).apply {
-                text = "View approximate stop ${index + 1} on Maps"; isAllCaps = false
-                setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(map))) }
-            })
-        }
-        reportDialog = AlertDialog.Builder(this).setTitle("Today's movement report").setView(ScrollView(this).apply { addView(reportBody) }).setPositiveButton("Close", null).show()
-        showMessage("")
+        val employee = session?.optJSONObject("user")
+        val screen = MovementReportScreen(this, report, MovementReportActions(
+            onBack = { runAction { renderDashboard() } },
+            onRefresh = { runAction { renderMovementReport(date) } },
+            onOpenMap = { url -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        ), employee?.optString("fullName").orEmpty(), employee?.optString("email").orEmpty())
+        dashboardScreen = null; viewerScreen = null
+        mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
 }

@@ -26,6 +26,8 @@ data class ViewerEmployee(
 
 enum class ViewerStatusFilter { ALL, MARKED, NOT_MARKED }
 enum class ViewerModeFilter { ALL, SETUP, ONSITE, OVERRIDE, LEGACY }
+data class ViewerFilters(val query: String = "", val department: String = "", val team: String = "",
+                         val status: ViewerStatusFilter = ViewerStatusFilter.ALL, val mode: ViewerModeFilter = ViewerModeFilter.ALL)
 
 object ViewerPresentation {
     private val india = ZoneId.of("Asia/Kolkata")
@@ -33,6 +35,9 @@ object ViewerPresentation {
     private val refreshed = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.ENGLISH).withZone(india)
 
     fun time(value: String): String = runCatching { time.format(Instant.parse(value)) }.getOrDefault("Time unavailable")
+    fun checkInTime(value: String): String = time(value).let { if (it == "Time unavailable") it else "$it IST" }
+    fun validRowState(status: String?, count: Int?): Boolean = count != null && count >= 0 &&
+        ((status == "marked" && count > 0) || (status == "not-marked" && count == 0))
     fun refreshed(value: String): String = runCatching { refreshed.format(Instant.parse(value)) + " IST" }.getOrDefault("Update time unavailable")
 
     fun initials(employee: ViewerEmployee): String {

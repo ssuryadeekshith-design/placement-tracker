@@ -82,7 +82,7 @@ export default function VenueGate({ children }) {
       }, () => lock('Location is unavailable or permission was denied. Enable precise location and retry.'), { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     } catch (error) { if (active.current && current === generation.current) setMessage(error.response?.data?.error || error.message || 'Venue access is unavailable.'); }
   }
-  if (unlocked) return <>{setup && <div className="alert" role="status">Temporary setup mode: venue, Wi-Fi and GPS are not checked. Attendance does not verify physical presence.</div>}{children}</>;
+  if (unlocked) return <>{setup && <div className="alert setup-global-notice" role="status">Temporary setup mode: venue, Wi-Fi and GPS are not checked. Attendance does not verify physical presence.</div>}{children}</>;
   return <main className="venue-lock"><section className="card auth-card">
     <p className="eyebrow">SHIKSHA VERTEX · BENGALURU</p><h1>App locked</h1>
     <p role="status">{message}</p>

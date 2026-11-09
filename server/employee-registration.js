@@ -1,3 +1,4 @@
+const { employeeAuthStatus } = require('./employee-auth-status');
 const { bootstrapHr } = require('./hr-bootstrap');
 const { HttpError, normalizeEmail } = require('./security');
 const data = snapshot => snapshot.exists ? snapshot.data() : null;
@@ -43,7 +44,9 @@ function registerEmployeeRoutes({ app, db, auth, config, now, interactiveRoute, 
     }));
     app.get('/api/employees', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
         const snapshot = await db.collection('Employees').get();
-        res.json(snapshot.docs.map(doc => ({ employeeId: doc.id, ...doc.data() })).sort((a, b) => a.fullName.localeCompare(b.fullName)));
+        const employees = snapshot.docs.map(doc => ({ employeeId: doc.id, ...doc.data() }));
+        const statuses = await employeeAuthStatus(employees, auth);
+        res.json(employees.map(employee => ({ ...employee, authStatus: statuses.get(employee.employeeId) })).sort((a, b) => a.fullName.localeCompare(b.fullName)));
     }));
     app.get('/api/registration-requests', ...interactiveRoute, committee, asyncRoute(async (req, res) => {
         const snapshot = await db.collection('RegistrationRequests').where('status', '==', 'pending').get();

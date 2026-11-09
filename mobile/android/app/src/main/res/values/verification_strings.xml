@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="verification_check">I have verified my email</string>
+    <string name="verification_checking">Checking verification…</string>
+    <string name="verification_continue">Continue to account</string>
+    <string name="verification_resend">Resend verification email</string>
+    <string name="verification_sending">Sending verification email…</string>
+    <string name="verification_resend_wait">Resend available in %1$ds</string>
+    <string name="verification_wait_help">You can check verification while waiting. Returning to this screen does not send another email.</string>
+    <string name="verification_resend_help">Resend is available. Delivery may take a moment; requesting an email does not verify your account.</string>
+    <string name="verification_confirmed_help">Verification confirmed by Firebase. Continue to check your account access.</string>
+    <string name="verification_pending">Email is not verified yet</string>
+    <string name="verification_pending_help">Open the link in the email sent to this address, then return and check again. Check your inbox and spam folder. If the link has expired, request another email when Resend becomes available.</string>
+    <string name="verification_confirmed">Email verified</string>
+    <string name="verification_already_confirmed">Email already verified</string>
+    <string name="verification_access_help">Firebase confirmed your email. Checking your account access does not bypass HR approval.</string>
+</resources>

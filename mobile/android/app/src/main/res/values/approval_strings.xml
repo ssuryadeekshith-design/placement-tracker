@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="approval_request_title">Request HR approval</string>
+    <string name="approval_request_help">Enter your full name as it appears in the employee directory. HR will match your verified account to your employee profile.</string>
+    <string name="approval_name">Full employee name</string>
+    <string name="approval_name_help">Use 2–120 characters. Your name does not grant a role or create another login.</string>
+    <string name="approval_pending">Pending HR approval</string>
+    <string name="approval_pending_help">Your request is waiting for an HR review. Check your status after HR confirms your employee profile.</string>
+    <string name="approval_requested_name">Name on your request</string>
+    <string name="approval_rejected">Request rejected</string>
+    <string name="approval_reason">Reason provided by HR</string>
+    <string name="approval_no_reason">No reason was provided by the service. Contact HR for clarification.</string>
+    <string name="approval_rejected_help">Contact HR to review this decision. Another submission does not replace a rejection.</string>
+    <string name="approval_recovery">Account recovery required</string>
+    <string name="approval_recovery_help">This email’s access needs an administrator review. HR may need to check the existing account link or access status. A new approval request cannot restore this access.</string>
+    <string name="approval_confirmed">HR approval confirmed</string>
+    <string name="approval_confirmed_help">Continue to check your account access. Your authenticated session determines which attendance features are available.</string>
+    <string name="approval_unavailable">Status not confirmed</string>
+    <string name="approval_unavailable_help">The current decision could not be confirmed. Check approval status before sending another request. This does not mean your request was rejected.</string>
+    <string name="approval_check">Check approval status</string>
+    <string name="approval_continue">Continue to account</string>
+    <string name="approval_checking">Checking approval status…</string>
+    <string name="approval_sending">Sending request…</string>
+    <string name="approval_hr_contact">Need help from HR?</string>
+    <string name="approval_contact_help">Share your work email and the decision shown here with HR so they can review your employee profile or account link.</string>
+    <string name="approval_copy_contact">Copy HR contact</string>
+    <string name="approval_contact_copied">HR contact copied. Contact HR using your preferred email app.</string>
+    <string name="approval_access_note">An approval request does not mark attendance or start location sharing. Account binding remains in place when you sign out.</string>
+</resources>

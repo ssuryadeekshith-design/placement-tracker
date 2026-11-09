@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sharing_show">Workday location sharing · show details</string>
+    <string name="sharing_hide">Workday location sharing · hide details</string>
+    <string name="sharing_off">Sharing off on this phone</string>
+    <string name="sharing_starting">Starting sharing</string>
+    <string name="sharing_waiting">Service running · waiting for location</string>
+    <string name="sharing_active">Location service running</string>
+    <string name="sharing_delayed">Service running · observations delayed</string>
+    <string name="sharing_stopped">Sharing stopped on this phone</string>
+    <string name="sharing_failed">Sharing needs attention</string>
+    <string name="sharing_consent">I agree to share today’s workday location, including my route, time away and approximate stops. I can stop at any time.</string>
+    <string name="sharing_explanation">Optional and separate from check-in. During 10:30 AM–8:30 PM India time, consented samples may be used in your own and authorized HR movement reports. Missing observations are unknown, not proof of presence or absence.</string>
+    <string name="sharing_start">Start location sharing for today</string>
+    <string name="sharing_stop">Stop Sharing</string>
+    <string name="sharing_retry_stop">Retry server stop</string>
+    <string name="sharing_stop_sending">Confirming server stop…</string>
+    <string name="sharing_no_sample">No location sample observed in this run.</string>
+    <string name="sharing_no_upload">No location upload confirmed in this run.</string>
+    <string name="sharing_last_sample">Last sample observed: %1$s</string>
+    <string name="sharing_last_upload">Last upload confirmed: %1$s</string>
+    <string name="sharing_pending_stop">Collection is stopped on this phone. Server confirmation is pending. Retry server stop before starting again.</string>
+    <string name="sharing_confirming_stop">Collection is stopped on this phone. Waiting for the attendance service to confirm the stop.</string>
+    <string name="sharing_window">Start is available from 10:30 AM to 8:30 PM, India time. Nothing is scheduled to start automatically.</string>
+    <string name="sharing_need_consent">Read the details and agree before starting. Opening this card does not start collection.</string>
+    <string name="sharing_running_help">Stop Sharing works even while another dashboard request is busy. Upload confirmation is separate from the running service.</string>
+    <string name="sharing_notification">Android notification</string>
+    <string name="sharing_notification_help">Location sharing service running. The persistent Android notification also includes Stop Sharing.</string>
+    <string name="sharing_report">View today’s movement report</string>
+</resources>
