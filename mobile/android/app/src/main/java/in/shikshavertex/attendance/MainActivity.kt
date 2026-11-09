@@ -45,6 +45,7 @@ class MainActivity : FragmentActivity() {
     private var actionGeneration = 0L
     private var actionJob: Job? = null
     private var policyJob: Job? = null
+    private var readinessJob: Job? = null
     private var session: JSONObject? = null
     private var registeredPasskey = false
     private var biometricConfigured = false
@@ -104,11 +105,13 @@ class MainActivity : FragmentActivity() {
         if (::api.isInitialized) {
             AttendanceWifi.startObserving(this)
             refreshAccessPolicy()
+            dashboardScreen?.let { if(it.readinessEnabled) startReadiness(it) }
         }
     }
     override fun onPause() {
         authScreen?.clearPassword()
         policyJob?.cancel()
+        stopReadiness()
         AttendanceWifi.stopObserving()
         super.onPause()
     }
@@ -353,7 +356,7 @@ class MainActivity : FragmentActivity() {
         ), emailVerified = auth.currentUser?.isEmailVerified == true)
         mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
-    private suspend fun renderDashboard() {
+    private suspend fun renderDashboard(celebrateEventId: String = "") {
         if (!appAvailable) return
         val employee = session?.optJSONObject("user") ?: return
         if (dashboardScreen == null && viewerScreen == null) showDesignLoading(if (employee.optString("role") == "attendance-viewer") "Loading attendance records" else "Loading my attendance")
@@ -373,7 +376,7 @@ class MainActivity : FragmentActivity() {
         val receipts = savedReceipts.values.filter { it.optString("uid") == uid }.map { record ->
             ReceiptRecord(uid, record.optString("eventId"), record.optString("timestamp"), record.optString("attendanceMode", "legacy"),
                 record.optJSONObject("verification")?.optString("method") == "passkey-user-verification",
-                record.optJSONObject("wifi")?.let { it.optString("ssid") == WifiRule.REQUIRED_SSID && it.optString("verification") == "native-client-observation" } == true)
+                officeConnectionObserved(record), record.opt("locationVerified") == true)
         }
         val todayReceipts = EmployeePresentation.receipts(uid, today.map { it.optString("id") }.toSet(), receipts)
         val sessions = today.filter { it.optBoolean("checkInOpen") || todayReceipts.containsKey(it.optString("id")) }
@@ -386,7 +389,7 @@ class MainActivity : FragmentActivity() {
             "Checked on submission",
             if (!onsite) "Not required" else if (runCatching { AttendanceWifi.requireConnected(this) }.isSuccess) "Connected now" else "Not confirmed",
             TrackingService.status.current.forUser(uid).message, employee.optBoolean("canViewAllAttendance"), employee.optString("role") == "committee", preferredAttendanceSession,
-            employeeUid = uid, sharingSnapshot = TrackingService.status.current)
+            employeeUid = uid, sharingSnapshot = TrackingService.status.current, celebrateEventId = celebrateEventId)
         mountDashboard(model)
     }
     private suspend fun refreshDashboard() {
@@ -396,6 +399,7 @@ class MainActivity : FragmentActivity() {
         catch (error: Exception) { dashboardScreen?.invalidateCheckIn(); throw error }
     }
     private fun mountDashboard(model: EmployeeDashboardModel) {
+        readinessJob?.cancel(); readinessJob=null
         lastDashboardModel = model
         val screen = EmployeeDashboardScreen(this, model, EmployeeDashboardActions(
             onRefresh = { runAction { refreshDashboard() } },
@@ -408,46 +412,143 @@ class MainActivity : FragmentActivity() {
             onMovementReport = { runAction { renderMovementReport() } },
             onSignOut = { signOutAccount() },
             onMaps = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) },
-            onCheckWifi = { requestPermissionsThen(false) { AttendanceWifi.startObserving(this); runAction {
-                try { AttendanceWifi.requireConnected(this); refreshDashboard(); showNotice("Office connection confirmed at this check. It is checked again on submission.") }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (error: Exception) { dashboardScreen?.invalidateCheckIn(); throw error }
-            } } }
+            onCheckReadiness = { screen ->
+                if(!busy && pendingPermissions==null) requestPermissionsThen(false) {
+                    if(dashboardScreen===screen && screen.root.isAttachedToWindow) { screen.enableReadiness(); startReadiness(screen) }
+                }
+            },
+            onReadinessVisibility = { screen, visible ->
+                if(dashboardScreen===screen) {
+                    if(visible && screen.readinessEnabled) startReadiness(screen)
+                    else if(!visible) stopReadiness()
+                }
+            }
         ))
         dashboardScreen = screen; viewerScreen = null
         mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
+    private fun officeConnectionObserved(record: JSONObject): Boolean = record.optJSONObject("wifi")?.let {
+        it.optString("ssid") == WifiRule.REQUIRED_SSID && it.optString("verification") in setOf("native-client-observation", "native-observation-and-request-ip")
+    } == true
+    private fun attendanceVenue(): VenueGate.Venue {
+        val venue = session?.optJSONObject("venue")
+        return VenueGate.Venue(venue?.optDouble("latitude",Double.NaN) ?: Double.NaN,
+            venue?.optDouble("longitude",Double.NaN) ?: Double.NaN,
+            venue?.optDouble("radiusMeters",Double.NaN) ?: Double.NaN,
+            venue?.optDouble("maxAccuracyMeters",Double.NaN) ?: Double.NaN, venue?.opt("configured") == true)
+    }
+    private fun locationDecision(point: android.location.Location): VenueGate.Decision {
+        @Suppress("DEPRECATION") val mocked = point.isFromMockProvider
+        val age = (android.os.SystemClock.elapsedRealtimeNanos()-point.elapsedRealtimeNanos)/1000000
+        return VenueGate.evaluate(VenueGate.Fix(point.latitude,point.longitude,point.accuracy.toDouble(),point.time,age,mocked),attendanceVenue())
+    }
+    private fun stopReadiness() { readinessJob?.cancel(); readinessJob=null; dashboardScreen?.resetReadiness() }
+    private fun startReadiness(screen: EmployeeDashboardScreen) {
+        readinessJob?.cancel()
+        if(!screen.readinessEnabled || dashboardScreen!==screen || !screen.root.isAttachedToWindow ||
+            screen.employeeUid != auth.currentUser?.uid || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
+        readinessJob=lifecycleScope.launch {
+            kotlinx.coroutines.coroutineScope {
+                fun visible() = dashboardScreen===screen && screen.root.isAttachedToWindow &&
+                    screen.employeeUid==auth.currentUser?.uid && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                launch {
+                    while(visible()) {
+                        if(!busy) {
+                            AttendanceWifi.startObserving(this@MainActivity)
+                            val connection=runCatching { AttendanceWifi.requireConnected(this@MainActivity) }
+                            screen.updateConnection(ReadinessSignal(if(connection.isSuccess) ReadinessState.READY else ReadinessState.UNKNOWN,
+                                if(connection.isSuccess) "Connected" else connection.exceptionOrNull()?.message ?: "Connection unavailable", System.currentTimeMillis()))
+                        }
+                        kotlinx.coroutines.delay(2000)
+                    }
+                }
+                while(visible()) {
+                    if(!busy) {
+                        screen.checkingGps()
+                        try {
+                            val point=LocationAccess.current(this@MainActivity)
+                            if(!visible()) break
+                            val decision=locationDecision(point)
+                            screen.updateGps(ReadinessSignal(if(decision.allowed) ReadinessState.READY else if(decision.outside) ReadinessState.FAILED else ReadinessState.UNKNOWN,decision.reason,point.time))
+                        } catch(cancelled: CancellationException) { throw cancelled }
+                        catch(error: Exception) { if(visible()) screen.updateGps(ReadinessSignal(detail=error.message ?: "Location unavailable")) }
+                    }
+                    kotlinx.coroutines.delay(5000)
+                }
+            }
+        }
+    }
+    private class CheckInFailure(val feedback: AttendanceFailure): Exception(feedback.primary)
     private fun submitAttendance(eventId: String, consent: Boolean) {
         if (!consent) { showMessage("Confirm the attendance statement first."); return }
         if (!registeredPasskey || !biometricConfigured) { showMessage("Enroll a phone passkey first."); return }
+        val expectedUid=auth.currentUser?.uid ?: return
+        val screen=dashboardScreen ?: return
         val submit: () -> Unit = { runAction {
-            AttendanceWifi.requireConnected(this)
-            val proof = verifyPasskey(eventId)
-            // Obtain the point after the OS prompt; an old pre-prompt fix may expire.
-            val location = LocationAccess.current(this)
-            val body = JSONObject().put("eventId", eventId).put("biometricProof", proof)
-            body.put("location", LocationAccess.point(location))
-            val response = api.json("/attendance", "POST", body)
-            val record = response.getJSONObject("attendance")
-            savedReceipts["${record.optString("uid")}:$eventId"] = record
-            preferredAttendanceSession = eventId
-            try { renderDashboard() }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) {
-                showRecordedReceipt(record, eventId)
+            stopReadiness(); screen.clearVerification()
+            var started=0L; var submitted=false
+            var gpsDetail="Not checked"; var connectionDetail="Not checked"
+            suspend fun transition() {
+                if(started>0) kotlinx.coroutines.delay(AttendanceFeedback.remainingTransition(
+                    android.os.SystemClock.elapsedRealtime()-started,android.animation.ValueAnimator.areAnimatorsEnabled()))
+            }
+            try {
+                val proof = verifyPasskey(eventId) {
+                    started=android.os.SystemClock.elapsedRealtime()
+                    screen.showVerifyingOffice()
+                }
+                AttendanceWifi.startObserving(this@MainActivity)
+                val connection=runCatching { AttendanceWifi.requireConnected(this@MainActivity) }
+                connectionDetail=if(connection.isSuccess) "Connected to Shikshavertex_5G" else connection.exceptionOrNull()?.message ?: "Office connection unavailable"
+                val location = try { LocationAccess.current(this@MainActivity) }
+                catch(cancelled: CancellationException) { throw cancelled }
+                catch(error: Exception) { throw CheckInFailure(AttendanceFailure(AttendanceFailureKind.LOCATION_UNAVAILABLE,
+                    error.message ?: "Fresh precise location unavailable",connectionDetail,"Enable precise location, move inside the office and retry. No check-in was submitted.")) }
+                val decision=locationDecision(location); gpsDetail=decision.reason
+                screen.updateGps(ReadinessSignal(if(decision.allowed) ReadinessState.READY else if(decision.outside) ReadinessState.FAILED else ReadinessState.UNKNOWN,decision.reason,location.time))
+                screen.updateConnection(ReadinessSignal(if(connection.isSuccess) ReadinessState.READY else ReadinessState.FAILED,connectionDetail,System.currentTimeMillis()))
+                if(!decision.allowed) throw CheckInFailure(AttendanceFailure(if(decision.outside) AttendanceFailureKind.OUTSIDE else AttendanceFailureKind.LOCATION_UNAVAILABLE,
+                    gpsDetail,connectionDetail,"Move inside the office and obtain a fresh, accurate reading before retrying."))
+                if(connection.isFailure) throw CheckInFailure(AttendanceFailure(AttendanceFailureKind.CONNECTION,gpsDetail,connectionDetail,"Connect this phone to Shikshavertex_5G in Android network settings, then retry."))
+                check(auth.currentUser?.uid==expectedUid) { "Your account changed. Sign in and refresh attendance." }
+                val body = JSONObject().put("eventId", eventId).put("biometricProof", proof).put("location",LocationAccess.point(location))
+                submitted=true
+                val response = api.json("/attendance", "POST", body)
+                val record = response.getJSONObject("attendance")
+                check(AttendanceFeedback.receiptAccepted(response.opt("success")==true,record.optString("uid"),expectedUid,
+                    record.optString("eventId"),eventId,record.optString("timestamp"))) { "The server receipt could not be confirmed. Refresh attendance." }
+                savedReceipts["$expectedUid:$eventId"] = record
+                preferredAttendanceSession = eventId
+                transition()
+                try { renderDashboard(if(response.opt("alreadyMarked")==false) eventId else "") }
+                catch(cancelled: CancellationException) { throw cancelled }
+                catch(_: Exception) { showRecordedReceipt(record,eventId,response.opt("alreadyMarked")==false) }
+            } catch(cancelled: CancellationException) { throw cancelled }
+            catch(error: Exception) {
+                transition()
+                if(dashboardScreen!==screen || auth.currentUser?.uid!=expectedUid) throw error
+                screen.clearVerification(); restoreAfterPrompt=false
+                if(error is CheckInFailure) screen.showAttendanceFailure(error.feedback)
+                else if(started>0) {
+                    val uncertain=AttendanceFeedback.serviceFailureKind(submitted,(error as? ApiException)?.status)==AttendanceFailureKind.UNCONFIRMED
+                    screen.showAttendanceFailure(AttendanceFailure(if(uncertain) AttendanceFailureKind.UNCONFIRMED else AttendanceFailureKind.SERVICE,
+                        gpsDetail,connectionDetail,if(uncertain) "The request may have reached the server. Refresh attendance before retrying; any original timestamp is preserved."
+                        else friendlyError(error)))
+                } else throw error // A cancelled phone prompt never claims an outside-office failure.
             }
         } }
         requestPermissionsThen(false, submit)
     }
-    private fun showRecordedReceipt(record: JSONObject, eventId: String) {
+    private fun showRecordedReceipt(record: JSONObject, eventId: String, celebrate: Boolean = false) {
         check(record.optString("uid") == auth.currentUser?.uid) { "Refresh attendance to load your own receipt." }
         val model = lastDashboardModel
         if (model != null && model.employeeUid == record.optString("uid") && model.events.any { it.id == eventId }) {
             val receipt = DashboardReceipt(record.optString("timestamp"), record.optString("attendanceMode", "legacy"),
                 phoneVerified = record.optJSONObject("verification")?.optString("method") == "passkey-user-verification",
-                venueWifiObserved = record.optJSONObject("wifi")?.let { it.optString("ssid") == WifiRule.REQUIRED_SSID && it.optString("verification") == "native-client-observation" } == true)
+                venueWifiObserved = officeConnectionObserved(record), venueLocationVerified = record.opt("locationVerified")==true)
             mountDashboard(model.copy(receipts = model.receipts + (eventId to receipt), preferredSessionId = eventId,
-                refreshRequired = true, trackingStatus = TrackingService.status.current.message, sharingSnapshot = TrackingService.status.current))
+                refreshRequired = true, trackingStatus = TrackingService.status.current.message, sharingSnapshot = TrackingService.status.current,
+                celebrateEventId = if(celebrate) eventId else ""))
             showNotice("Attendance recorded. Your original receipt is shown. Refresh attendance when connected to confirm the latest dashboard settings.")
             return
         }
@@ -610,7 +711,7 @@ class MainActivity : FragmentActivity() {
         try { awaitVenueAfterSystemPrompt() } finally { ceremonyInProgress = false }
         api.json("/biometrics/registration/verify", "POST", JSONObject().put("challengeId", options.getString("challengeId")).put("response", JSONObject(response.registrationResponseJson)))
     }
-    private suspend fun verifyPasskey(eventId: String): String {
+    private suspend fun verifyPasskey(eventId: String, onPromptComplete: () -> Unit = {}): String {
         val options = api.json("/biometrics/authentication/options", "POST", JSONObject().put("eventId", eventId))
         restoreAfterPrompt = dashboardScreen != null
         ceremonyInProgress = true
@@ -620,6 +721,7 @@ class MainActivity : FragmentActivity() {
         } catch (error: Exception) { ceremonyInProgress = false; throw error }
         try { awaitVenueAfterSystemPrompt() } finally { ceremonyInProgress = false }
         val credential = result.credential as? PublicKeyCredential ?: throw IllegalStateException("A phone passkey is required.")
+        onPromptComplete()
         val verified = api.json("/biometrics/authentication/verify", "POST", JSONObject().put("challengeId", options.getString("challengeId")).put("response", JSONObject(credential.authenticationResponseJson)))
         return verified.getString("proof")
     }

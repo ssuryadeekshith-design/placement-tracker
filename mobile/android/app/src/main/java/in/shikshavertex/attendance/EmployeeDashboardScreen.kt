@@ -27,6 +27,7 @@ data class DashboardReceipt(
     val alreadyMarked: Boolean = false,
     val phoneVerified: Boolean = false,
     val venueWifiObserved: Boolean = false,
+    val venueLocationVerified: Boolean = false,
 )
 
 data class EmployeeDashboardModel(
@@ -50,6 +51,7 @@ data class EmployeeDashboardModel(
     val refreshRequired: Boolean = false,
     val employeeUid: String = "",
     val sharingSnapshot: SharingSnapshot = SharingSnapshot(),
+    val celebrateEventId: String = "",
 )
 
 data class EmployeeDashboardActions(
@@ -63,7 +65,8 @@ data class EmployeeDashboardActions(
     val onMovementReport: () -> Unit,
     val onSignOut: () -> Unit,
     val onMaps: () -> Unit,
-    val onCheckWifi: () -> Unit,
+    val onCheckReadiness: (EmployeeDashboardScreen) -> Unit,
+    val onReadinessVisibility: (EmployeeDashboardScreen, Boolean) -> Unit,
 )
 
 /** Presentation only: successful attendance and prerequisite states come from the supplied model. */
@@ -93,6 +96,18 @@ class EmployeeDashboardScreen(
     private lateinit var checkInControls: LinearLayout
     private lateinit var sharingCard: LocationSharingCard
     private var selectedSessionId: String? = null
+    private var renderedReceipt: String? = null
+    private var verifying = false
+    private var failure: AttendanceFailure? = null
+    var readinessEnabled = false
+        private set
+    private var gpsSignal = ReadinessSignal()
+    private var connectionSignal = ReadinessSignal()
+    private lateinit var gpsPill: TextView
+    private lateinit var connectionPill: TextView
+    private lateinit var feedback: AttendanceFeedbackPanel
+    val employeeUid get() = model.employeeUid
+
 
     val root: View = ui.column().apply {
         setBackgroundColor(AttendanceUi.CANVAS)
@@ -125,13 +140,14 @@ class EmployeeDashboardScreen(
             private var date = Workday.date()
             private val tick = object : Runnable {
                 override fun run() {
+                    renderReadiness()
                     val today = Workday.date()
                     if (today != date) { date = today; statement.isChecked = false; updateSelection() }
                     root.postDelayed(this, 1000)
                 }
             }
-            override fun onViewAttachedToWindow(view: View) { updateSelection(); root.post(tick) }
-            override fun onViewDetachedFromWindow(view: View) { root.removeCallbacks(tick) }
+            override fun onViewAttachedToWindow(view: View) { updateSelection(); root.post(tick); actions.onReadinessVisibility(this@EmployeeDashboardScreen, true) }
+            override fun onViewDetachedFromWindow(view: View) { root.removeCallbacks(tick); actions.onReadinessVisibility(this@EmployeeDashboardScreen, false) }
         })
     }
 
@@ -197,13 +213,49 @@ class EmployeeDashboardScreen(
 
     private fun buildMode() {
         val card = ui.card(body)
-        ui.section(card, "Onsite check-in", "Your connected phone and fresh location are checked before submission.")
-        ui.chip(card, "Venue location · checked when you submit", if (model.gpsStatus == "Confirmed now") Tone.SUCCESS else Tone.WARNING)
-        ui.chip(card, "Office connection · ${if (model.wifiStatus == "Connected now") "Connected on refresh" else model.wifiStatus}", if (model.wifiStatus == "Connected now") Tone.SUCCESS else Tone.WARNING)
-        card.addView(ui.text("GPS verifies building proximity, not floor level. Unknown or stale readings do not count as verified.", 12f, AttendanceUi.MUTED))
-        card.addView(ui.text("Prerequisite status is checked on refresh and again at submission.", 12f, AttendanceUi.MUTED))
-        actionButton(card, "Check office connection", action = actions.onCheckWifi)
+        ui.section(card, "Office readiness", "Check your position and office connection before marking attendance.")
+        gpsPill = ui.chip(card, "Venue GPS · Not checked", Tone.WARNING)
+        connectionPill = ui.chip(card, "Office connection · Not checked", Tone.WARNING)
+        card.addView(ui.text("Check office readiness uses precise location while this dashboard is visible. These checks stay on this phone; they do not save attendance or start daily location sharing. GPS checks building proximity, not a floor.", 12f, AttendanceUi.MUTED))
+        actionButton(card, "Check office readiness") { actions.onCheckReadiness(this) }
     }
+    fun enableReadiness() { readinessEnabled = true }
+    fun resetReadiness() { gpsSignal = ReadinessSignal(); connectionSignal = ReadinessSignal(); renderReadiness() }
+    fun checkingGps() {
+        gpsSignal = gpsSignal.fresh(System.currentTimeMillis())
+        if(gpsSignal.state==ReadinessState.UNKNOWN) gpsSignal=ReadinessSignal(ReadinessState.CHECKING,"Checking precise location…")
+        renderReadiness()
+    }
+    fun updateGps(signal: ReadinessSignal) { gpsSignal = signal; renderReadiness() }
+    fun updateConnection(signal: ReadinessSignal) { connectionSignal = signal; renderReadiness() }
+    private fun renderReadiness() {
+        if (!::gpsPill.isInitialized) return
+        val now = System.currentTimeMillis()
+        gpsSignal = gpsSignal.fresh(now); connectionSignal = connectionSignal.fresh(now,5000)
+        fun show(view: TextView, signal: ReadinessSignal, ready: String, pending: String) {
+            view.text = if(signal.state==ReadinessState.READY) ready else "$pending · ${signal.detail}"
+            val color = when(signal.state) { ReadinessState.READY -> AttendanceUi.GREEN; ReadinessState.FAILED -> AttendanceUi.RED; else -> AttendanceUi.AMBER }
+            view.setTextColor(color)
+            view.background = ui.rounded(when(signal.state) { ReadinessState.READY -> Color.rgb(236,253,245); ReadinessState.FAILED -> Color.rgb(254,242,242); else -> Color.rgb(255,251,235) },Color.TRANSPARENT,8)
+        }
+        show(gpsPill,gpsSignal,"Venue GPS Ready","Venue GPS")
+        show(connectionPill,connectionSignal,"Connected to Shikshavertex_5G","Office connection")
+    }
+    fun showVerifyingOffice() {
+        verifying = true; feedback.verifying(); updateSelection()
+        if(android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            submit.animate().cancel(); submit.alpha=.55f; submit.animate().alpha(1f).setDuration(200).start()
+            feedback.root.alpha=0f; feedback.root.animate().alpha(1f).setDuration(180).start()
+        }
+        feedback.root.doOnLayout { it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true) }
+    }
+    fun showAttendanceFailure(value: AttendanceFailure) {
+        verifying = false; failure = value
+        if(value.kind==AttendanceFailureKind.UNCONFIRMED) refreshRequired = true
+        feedback.failure(value); updateSelection()
+        feedback.root.doOnLayout { it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true) }
+    }
+    fun clearVerification() { verifying = false; submit.animate().cancel(); submit.alpha=1f; feedback.root.animate().cancel(); feedback.root.alpha=1f; feedback.clear(); updateSelection() }
 
     private fun step(parent: LinearLayout, number: String, title: String, body: String = ""): LinearLayout {
         ui.space(parent, 16)
@@ -243,6 +295,13 @@ class EmployeeDashboardScreen(
         enabled.add(sessions to { model.events.isNotEmpty() })
         sessionStep.addView(sessions, LinearLayout.LayoutParams(-1, -2))
         if (model.events.isEmpty()) ui.banner(sessionStep, "No open attendance session", "Waiting for HR to open today’s attendance. Use Refresh attendance after HR opens it.", Tone.NEUTRAL)
+        feedback = AttendanceFeedbackPanel(context, card) {
+            if(!busy) {
+                if(failure?.kind==AttendanceFailureKind.UNCONFIRMED) actions.onRefresh()
+                else if(canSubmit()) selectedSession()?.let { actions.onSubmit(it.id, statement.isChecked) }
+                else showMessage("Refresh attendance and confirm the attendance statement before retrying.")
+            }
+        }
         receiptContainer = ui.column()
         card.addView(receiptContainer)
         checkInControls = ui.column()
@@ -257,7 +316,7 @@ class EmployeeDashboardScreen(
         }
         enabled.add(statement to { true })
         consent.addView(statement, LinearLayout.LayoutParams(-1, -2))
-        step(checkInControls, "4", "Verify phone & mark attendance", "Use the blue action below to finish securely.")
+        step(checkInControls, "4", "Verify Phone & Mark Attendance", "Use the blue action below to finish securely.")
         ui.space(card, 12)
         card.addView(ui.text("Verified via Android fingerprint, face or device PIN. Shikshavertex never collects or stores your biometric templates.", 12f, AttendanceUi.MUTED))
         sessions.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -276,7 +335,7 @@ class EmployeeDashboardScreen(
         submitHelp = ui.text("", 12f, AttendanceUi.MUTED)
         submitHelp.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         sticky.addView(submitHelp)
-        submit = actionButton(sticky, "Verify phone & mark attendance", primary = true, available = { canSubmit() }) {
+        submit = actionButton(sticky, "Verify Phone & Mark Attendance", primary = true, available = { canSubmit() }) {
             selectedSession()?.let { actions.onSubmit(it.id, statement.isChecked) }
         }
     }
@@ -299,27 +358,31 @@ class EmployeeDashboardScreen(
         if (selected?.id != selectedSessionId) {
             selectedSessionId = selected?.id
             statement.isChecked = false
+            failure = null; verifying = false; if(::feedback.isInitialized) feedback.clear()
         }
         val receipt = selected?.let { model.receipts[it.id] }
         dataNotice.visibility = if (refreshRequired || model.loadedDate != Workday.date()) View.VISIBLE else View.GONE
-        receiptContainer.removeAllViews()
+
         checkInControls.visibility = if (receipt == null) View.VISIBLE else View.GONE
-        if (receipt != null) {
-            val recordedAt = runCatching {
-                DateTimeFormatter.ofPattern("d MMM yyyy · h:mm:ss a 'IST'").withZone(Workday.zone).format(Instant.parse(receipt.timestamp))
-            }.getOrDefault("Original record time unavailable")
-            ui.banner(receiptContainer, "Attendance recorded", "$recordedAt\n${if (receipt.mode == "setup") "Historical check-in · location not verified.\n" else ""}Repeat verifications preserve your original check-in time.", Tone.SUCCESS)
-            if (receipt.phoneVerified) ui.chip(receiptContainer, "Phone passkey verified", Tone.SUCCESS)
-            if (receipt.venueWifiObserved) ui.chip(receiptContainer, "Office connection observed at check-in", Tone.SUCCESS)
-            if (!receiptFocused && selected.id == model.preferredSessionId) {
+        val receiptKey = receipt?.let { "${selected?.id}:${it.timestamp}" }
+        if (receipt != null && receiptKey != renderedReceipt) {
+            renderedReceipt = receiptKey
+            receiptContainer.removeAllViews(); verifying = false; feedback.clear()
+            val saved = AttendanceFeedbackPanel(context,receiptContainer) {}
+            saved.root.post { if(saved.root.isAttachedToWindow) saved.receipt(receipt,selected?.id==model.celebrateEventId) }
+            saved.root.visibility = View.VISIBLE
+            if (!receiptFocused && selected?.id == model.preferredSessionId) {
                 receiptFocused = true
-                receiptContainer.doOnLayout { it.requestRectangleOnScreen(android.graphics.Rect(0, 0, it.width, it.height), true) }
+                receiptContainer.doOnLayout { it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true) }
             }
+        } else if(receipt == null && renderedReceipt != null) {
+            renderedReceipt = null; receiptContainer.removeAllViews()
         }
         submit.text = when {
-            busy -> "Please wait…"
+            busy && verifying -> "Verifying Office Location…"
+            busy -> "Verify your phone…"
             receipt != null -> "Attendance already recorded"
-            else -> "Verify phone & mark attendance"
+            else -> "Verify Phone & Mark Attendance"
         }
         submitHelp.setText(when (gate()) {
             CheckInGate.RECORDED -> R.string.dashboard_record_preserved
@@ -337,7 +400,7 @@ class EmployeeDashboardScreen(
 
     private fun applyEnabled() { enabled.forEach { (view, available) -> view.isEnabled = !busy && available() } }
 
-    fun setBusy(value: Boolean) { busy = value; updateSelection(); sharingCard.setBusy(value) }
+    fun setBusy(value: Boolean) { busy = value; updateSelection(); feedback.setBusy(value); sharingCard.setBusy(value) }
     fun showMessage(value: String) {
         message.setTextColor(AttendanceUi.RED)
         message.text = value

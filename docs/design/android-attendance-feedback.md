@@ -1,0 +1,13 @@
+# Android attendance feedback
+
+The employee dashboard now has an explicit **Check office readiness** action. After the employee grants precise-location permission, readiness updates while this dashboard is visible (connection every two seconds; fresh positions after each five-second pause). It stops on pause, navigation or sign-out. The app still opens anywhere. Readiness is local, never creates attendance and never starts workday sharing. Green location status expires after 15 seconds and connection status after five seconds without a new reading.
+
+The phone prompt is followed by **Verifying Office Location…**, a native blue radar pulse and a minimum one-second transition. Longer real checks stay pending. Device motion settings disable decorative animation and the artificial minimum delay. Neither the timer nor a local green pill can produce success.
+
+A matching, parseable server receipt supplies the original timestamp and allows **Attendance Marked!**. New receipts animate an emerald sphere (500 ms spring-style pop), an expanding halo (900 ms) and a checkmark drawn after the pop (320 ms). Haptics respect system settings. Existing or duplicate receipts are static; refreshing does not replay the celebration. **Verified at Office** requires stored phone, location and connection evidence; historical or incomplete evidence remains explicit.
+
+A trustworthy position wholly outside the venue produces the exact alert **You are not at the office, so attendance will not be marked.** The red circle shakes for 400 ms with two short system haptic requests. Denied, stale, mocked, inaccurate or boundary-overlapping positions never assert that the person is outside. Diagnostics distinguish GPS from the office connection. Retry uses fresh phone verification and fresh observations; room codes remain removed.
+
+After an ambiguous POST failure or invalid server receipt, the action becomes **Refresh attendance** and new submission stays blocked until refresh. A possible committed record must not be called rejected or automatically retried. Other service/account failures keep their specific explanation instead of being labelled an outside-office failure.
+
+[Interactive design reference](attendance-feedback-preview.html) uses sample data and mirrors the native visuals; it is not a phone test. For device validation check permission denial, uncertain and expired GPS, offsite/wrong-connection failures, a successful onsite submission, a duplicate, transport failure after submission, leaving/resuming the dashboard, rotation, large fonts, system animations off and haptics off. Confirm the server receipt matches the displayed timestamp and that readiness did not upload a movement trail.
