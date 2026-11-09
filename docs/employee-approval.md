@@ -29,6 +29,8 @@ HR controls are available in the Android app's **Review employee approval reques
 
 ## Android installation and signing
 
+**Current decision:** The owner approved a fresh-install/new-key migration after the previous file could not be recognized. Follow [Android 1.7 signing setup](android-signing-setup.md). The older signature-recovery notes below explain the previous blocker; the new workflow pins the owner’s new public certificate before any later CI-signed release.
+
 The app now defaults to `https://placement-tracker-lyjf.onrender.com/api` as already configured in the upstream project. Live health returned HTTP 200/status ok during this work, and the public Android association endpoint returned HTTP 200. This is not a phone sign-in, Wi-Fi or passkey test.
 
 The APK workflow retains a signature guard for the owner's verified version 1.2 certificate (`D72678D6…FF433D25`). Its development cache is not a backup of the missing private signing key. A new cache-generated key cannot update that installation, and the guard intentionally stops APK publication when the key differs. Restore the matching private keystore through a secure signing setup; rerunning the job or changing only a public fingerprint does not recover the key. No APK was built during this interface/integration review.

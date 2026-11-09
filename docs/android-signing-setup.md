@@ -1,54 +1,63 @@
-# Use the existing Android signing file privately
+# Android 1.7 fresh-install migration — approved by the owner
 
-The owner confirmed they have a signing file. That resolves availability only after its public certificate is checked; it does not yet prove that it matches the installed app. The workflow will not generate a new identity or fall back to a cached debug key.
+The owner explicitly approved a new signing identity and reinstalling phones that have the old identity. The previous signing-file recovery procedure is superseded. Reinstalling does not delete server attendance records, but local sign-in/binding/passkey state can need setup again. Do not uninstall anything until the new certificate is allowed by the hosted server and the test APK is ready.
 
-## 1. Check the file on your own computer
+## 1. Download the setup bundle
 
-Keep `.jks`/`.keystore` files and all passwords private. Do not send them in chat or add them to repository files. On the computer holding the file, run:
+Open GitHub → `ssuryadeekshith-design/placement-tracker` → **Actions → Build attendance APK**. Use the latest successful `main` run after this migration change, or use **Run workflow → main**. From its Artifacts section download **attendance-new-install-setup** on the computer, then extract the full ZIP into Downloads.
+
+This artifact intentionally contains an unsigned 1.7 candidate, a portable AOSP signing tool with its notice, and the local signing script. It is not an employee installer. No keystore/password is included. Unlike the previous workflow, a missing CI signing secret does not prevent building this local-signing setup bundle.
+
+## 2. Create the key and sign locally on the owner's Mac
+
+Java 21 was already installed successfully. Run:
 
 ```sh
-keytool -list -v -keystore "/full/path/to/your-signing-file.jks"
+bash "$HOME/Downloads/attendance-new-install-setup/sign-fresh-attendance.sh"
 ```
 
-Enter the keystore password only at the terminal prompt. Find **Alias name** and **SHA256** in the result. The certificate fingerprint is public and safe to share; the password and signing file are not.
+If the extracted folder was renamed by the browser, use its actual folder name. The script uses the unsigned APK beside it; no old signing file or file-picker search is required.
 
-The preserved version 1.2 update certificate is:
+Choose a NEW password of at least 12 characters, repeat it when prompted, and save it in a password manager. Terminal hides typed characters. The script verifies the candidate's checksum, creates the encrypted key locally, signs the candidate and checks the APK signature. It never prints or records the password in a plaintext file. It does not connect to or uninstall a phone.
 
-```text
-D7:26:78:D6:99:2A:09:AC:54:99:83:C3:70:85:1F:CA:B3:F6:63:5B:B3:BB:72:7F:C6:F7:DD:AD:FF:43:3D:25
-```
+- **Private key:** `~/ShikshavertexSigning/attendance-release.p12`
+- **Alias:** `shikshavertex-attendance-release`
+- **Signed installer:** `~/Desktop/Shikshavertex Attendance/attendance-1.7.apk`
+- **Public certificate:** `certificate.txt` and `render-passkeys.env` beside the signed installer
 
-If the fingerprint differs, stop before replacing the installed app or changing Render. Check the installed APK's public certificate and agree on a migration if necessary. Having another signing file does not make it an in-place update key.
+Back up the encrypted `.p12` file privately and keep its password separately. Do not upload that folder to a public repository, chat or an employee Drive share. Re-running the script reuses the same key. Once its public certificate has been pinned, a missing/different private key blocks signing instead of silently generating a replacement.
 
-## 2. Add four private repository secrets
+## 3. Send only the public SHA256 line
 
-Open GitHub → `ssuryadeekshith-design/placement-tracker` → **Settings → Secrets and variables → Actions → New repository secret**. These must be Secrets, not ordinary Variables or source files.
+Copy the script's **Public SHA256** line to the assistant. No private signing file/password is needed in chat. The administrator can then pin that certificate in `mobile/android/signing-certificate.sha256` and reconcile the server's accepted certificates.
 
-| Secret name | Value entered privately in GitHub |
+`UNCONFIGURED` in that public file permits only the already-approved first local key creation. CI never accepts an unpinned secret key or generates a production key in a disposable runner. Do not replace the marker with a guessed fingerprint.
+
+## 4. Match the hosted certificate before installing
+
+On Render → Placement Tracker → Environment, the existing `ANDROID_SHA256_CERT_FINGERPRINTS` needs to include the new confirmed fingerprint. It supports a comma-separated list, so preserve other approved certificates during the migration. Downloading `render-passkeys.env` or changing code alone does not change an existing Render environment override.
+
+The expected RP is `placement-tracker-lyjf.onrender.com`; its HTTPS `/.well-known/assetlinks.json` must list package `in.shikshavertex.attendance` and the new certificate, and the backend derives the matching Android WebAuthn origin. The agent can verify the public association after the owner updates Render, but this session has no Render management credential.
+
+Only after that association matches should the owner reinstall on ONE test Samsung phone, sign in using the existing Firebase account, and validate real phone verification, attendance and sharing/stop. Follow [physical-phone validation](phone-validation.md). Employee rollout follows those checks; it is not established by an APK build. Android 9+ is required; iPhones cannot install this APK. Desktop users use the web portal.
+
+## Optional: automate later signed builds with the same private key
+
+For later CI builds, add four **repository Secrets**, not Variables/source files, under GitHub → Settings → Secrets and variables → Actions:
+
+| Secret | Value entered privately |
 | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | Base64 of the existing keystore file |
-| `ANDROID_STORE_PASSWORD` | Keystore password |
-| `ANDROID_KEY_ALIAS` | Alias printed by keytool |
-| `ANDROID_KEY_PASSWORD` | Private-key entry password; often the same as the store password |
+| `ANDROID_KEYSTORE_BASE64` | Base64 of the new `attendance-release.p12` backup |
+| `ANDROID_STORE_PASSWORD` | New password chosen locally |
+| `ANDROID_KEY_ALIAS` | `shikshavertex-attendance-release` |
+| `ANDROID_KEY_PASSWORD` | Same password for this PKCS12 key |
 
-On the Mac shown in earlier screenshots, copy the file's base64 directly to the clipboard without printing it:
+On the Mac, copy base64 directly to the clipboard without printing it:
 
 ```sh
-base64 < "/full/path/to/your-signing-file.jks" | tr -d '\r\n' | pbcopy
+base64 < "$HOME/ShikshavertexSigning/attendance-release.p12" | tr -d '\r\n' | pbcopy
 ```
 
-Paste that only into the `ANDROID_KEYSTORE_BASE64` Secret value. After saving it, clear the clipboard (`printf '' | pbcopy`). Enter the remaining three values privately. Keep a secure backup of the original keystore; GitHub Secrets are not a replacement for your backup.
+Paste that only into `ANDROID_KEYSTORE_BASE64` and clear the clipboard afterward (`printf '' | pbcopy`). The pinned public certificate must already match. With all four secrets present the job signs and verifies the APK, uploads **attendance-android** containing `attendance-1.7.apk` and public metadata, and always removes temporary private files. No cached debug-key fallback is used. A partial secret configuration or mismatched key stops signed publication.
 
-The agent does not have a repository-secret management connection in this session and cannot populate those secret values for you. Once they exist, the workflow handles the build, signing, certificate check and artifact creation without exposing the key in the APK artifact.
-
-## 3. Run the build
-
-Open **Actions → Build attendance APK → Run workflow**, choose `main`, then **Run workflow**. The job restores the secret key into a temporary file, checks its public certificate, assembles/tests/lints the release, signs it, verifies the output and removes temporary signing files. Only the APK and public certificate/build metadata are uploaded.
-
-From the successful run, download the `attendance-android` artifact. It contains `attendance-1.6.apk`, `certificate.txt`, `render-passkeys.env` and `build-info.txt`. The old `app-debug.apk` name no longer identifies the new signed release. Do not install an unsigned candidate or uninstall the old app to force an update.
-
-## 4. Match the server before phone validation
-
-After confirming the correct public certificate, Render's `ANDROID_SHA256_CERT_FINGERPRINTS` must allow that installed APK certificate and its associated WebAuthn origin. The last observed live association advertised a different `49:CA:27:EB…` certificate, so this must be reconciled. Do not remove other approved installed-app certificates casually; the environment supports comma-separated fingerprints. The expected RP is `placement-tracker-lyjf.onrender.com`, and its public `/.well-known/assetlinks.json` must include the package and installed certificate.
-
-Only after the key, signed artifact and server association agree should the owner test the update on the Samsung phone, preserve existing app data, and perform [the physical-phone acceptance checks](phone-validation.md). A successful build is not evidence that a handset or a real passkey was tested.
+Without these secrets, the successful setup artifact still lets the owner sign privately on their own computer. This avoids depending on a temporary cloud workspace to hold the only copy of a production key.

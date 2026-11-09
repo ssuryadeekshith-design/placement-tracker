@@ -1,5 +1,7 @@
 # Completed interface integration review
 
+**Signing update:** The owner later approved a new-key/reinstall migration. The original-key blocker below is historical; [Android 1.7 signing setup](android-signing-setup.md) is the current procedure. Server certificate matching and physical-phone acceptance still apply.
+
 Review branch: `codex/remaining-enterprise-views`. This branch contains the completed Android and web interface work, integration fixes and a repeatable review workflow. It does not deploy the service, merge into main or publish an APK. The per-screen reviews and previews are indexed in [design/README.md](design/README.md).
 
 ## Integration fixes

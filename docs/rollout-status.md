@@ -1,5 +1,7 @@
 # Rollout preparation — 9 November 2026
 
+**Later signing decision:** The owner approved a fresh-install migration to a new key after the old file was not recognized. Use [the Android 1.7 local signing setup](android-signing-setup.md). Earlier references to unsigned 1.6 and original-key recovery below describe the previous state.
+
 The owner has authorized APK building and deployment. The existing review work is being published to main to trigger the linked Render service's automatic deploy. An actual deploy must be verified using the live commit metadata; a Git push alone is not proof of deployment.
 
 ## Deployment repairs

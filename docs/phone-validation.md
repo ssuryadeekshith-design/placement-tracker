@@ -1,5 +1,7 @@
 # Physical-phone validation
 
+The owner has now approved a fresh-install signing migration; use [the Android 1.7 setup](android-signing-setup.md). Wait until the new key is backed up, its certificate matches the server and the signed APK is ready before reinstalling on a test phone.
+
 Physical validation requires an actual phone. This cloud workspace cannot access a USB phone attached only to your laptop. Android Studio is needed only on the test computer for SDK/ADB tools, not on employees' phones or computers. The APK runs on Android 9+; iPhones cannot install an Android APK. Desktop users use the HTTPS web app, while native Wi-Fi observation and workday background sharing require Android.
 
 1. On the test laptop, install Android SDK Platform-Tools using Android Studio. Connect the Samsung phone by USB. Enable Developer options/USB debugging on the test phone and accept the computer's debugging prompt. Do not expose ADB to the public internet.

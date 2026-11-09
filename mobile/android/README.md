@@ -1,3 +1,5 @@
+> The owner has approved an Android 1.7 fresh-install signing migration. Use [the local signing bundle guide](../../docs/android-signing-setup.md) for the current key/installer process. Do not overwrite old installations until the new certificate is accepted by the server.
+
 # Shiksha Vertex Android attendance
 
 Version **1.5** implements the first two redesigned native views: Employee Attendance Dashboard and All-Employees Attendance Viewer. See [the design reference, interaction details and validation notes](../../docs/design/README.md). The existing signing-key publication blocker still applies.
