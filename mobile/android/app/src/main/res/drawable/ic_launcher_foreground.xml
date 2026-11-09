@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keep the full cap, tassel and monogram within Android's adaptive safe zone. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/shikshavertex_launcher"
+    android:insetLeft="6%"
+    android:insetTop="6%"
+    android:insetRight="6%"
+    android:insetBottom="6%" />
