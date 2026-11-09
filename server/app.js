@@ -104,7 +104,7 @@ function createApp({ db, auth, config, now = Date.now }) {
 
     registerEmployeeRoutes({ app, db, auth, config, now, interactiveRoute, committee, asyncRoute, limit });
 
-    app.get('/api/health', (req, res) => res.json({ status: 'ok', venueConfigured: config.venue.configured }));
+    app.get('/api/health', (req, res) => res.json({ status: 'ok', venueConfigured: config.venue.configured, deploymentCommit: config.deploymentCommit || null }));
     app.get('/api/venue', (req, res) => res.json(config.venue));
     app.post('/api/session', authenticate, asyncRoute(async (req, res) => {
         limit(`session:${req.identity.uid}`, 30);

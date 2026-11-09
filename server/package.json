@@ -8,7 +8,8 @@
     "test": "node --test test/*.test.js",
     "seed:emails": "node scripts/seed-emails.js",
     "committee:grant": "node scripts/grant-committee.js",
-    "seed:employees": "node scripts/seed-employees.js"
+    "seed:employees": "node scripts/seed-employees.js",
+    "postinstall": "node scripts/render-web-build.js"
   },
   "keywords": [],
   "author": "",

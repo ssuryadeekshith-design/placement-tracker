@@ -56,6 +56,7 @@ function loadConfig(env = process.env) {
     if (bootstrapHrEmail && !/^[^\s/@]+@shikshavertex\.in$/.test(bootstrapHrEmail)) throw new Error('Invalid HR_ADMIN_EMAIL');
     return {
         production,
+        deploymentCommit: /^[0-9a-f]{7,40}$/i.test(env.RENDER_GIT_COMMIT || '') ? env.RENDER_GIT_COMMIT : null,
         attendanceViewerEmails: [...new Set(attendanceViewerEmails)],
         bootstrapHrEmail,
         wifi: { required: onsite, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
