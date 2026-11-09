@@ -1,6 +1,6 @@
 # Signed APK download and WhatsApp sharing
 
-The Android workflow builds version 1.9 (build 10), tests it, restores the existing owner key from GitHub Actions secrets and checks its certificate against the pinned public SHA-256. Only a successful, signed `main` build can publish a release. The publication job checks the downloaded artifact's signature, package and version again. It uploads the complete installer and public metadata to a draft release before making the release visible. Re-running a published release preserves its files; an incomplete draft can be recovered.
+The Android workflow builds version 1.10 (build 11), tests it, restores the existing owner key from GitHub Actions secrets and checks its certificate against the pinned public SHA-256. Only a successful, signed `main` build can publish a release. The publication job checks the downloaded artifact's signature, package and version again. It uploads the complete installer and public metadata to a draft release before making the release visible. Re-running a published release preserves its files; an incomplete draft can be recovered.
 
 The stable link, once a signed release has published, is:
 

@@ -43,11 +43,11 @@ jobs:
                   raise SystemExit('Hosted API configuration missing from the APK.')
           tools = pathlib.Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0'
           package = subprocess.check_output([str(tools / 'aapt'), 'dump', 'badging', str(apk)], text=True).splitlines()[0]
-          if not all(text in package for text in ["name='in.shikshavertex.attendance'", "versionName='1.9'", "versionCode='10'"]):
+          if not all(text in package for text in ["name='in.shikshavertex.attendance'", "versionName='1.10'", "versionCode='11'"]):
               raise SystemExit('Unexpected package/version. Setup bundle will not be published.')
           target = pathlib.Path('attendance-new-install-setup')
           target.mkdir()
-          shutil.copyfile(apk, target / 'attendance-1.9-unsigned.apk')
+          shutil.copyfile(apk, target / 'attendance-1.10-unsigned.apk')
           shutil.copyfile('scripts/android/sign-fresh-attendance.sh', target / 'sign-fresh-attendance.sh')
           shutil.copyfile('scripts/android/SETUP-README.txt', target / 'READ-ME-FIRST.txt')
           shutil.copyfile('mobile/android/signing-certificate.sha256', target / 'signing-certificate.sha256')
@@ -110,8 +110,8 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/attendance-signing.keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out attendance-1.9.apk attendance-new-install-setup/attendance-1.9-unsigned.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs attendance-1.9.apk > certificate.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/attendance-signing.keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out attendance-1.10.apk attendance-new-install-setup/attendance-1.10-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs attendance-1.10.apk > certificate.txt
           python3 - <<'PY'
           import pathlib, re
           expected = pathlib.Path('mobile/android/signing-certificate.sha256').read_text().strip().replace(':', '').upper()
@@ -131,7 +131,7 @@ jobs:
         with:
           name: attendance-android
           path: |
-            attendance-1.9.apk
+            attendance-1.10.apk
             certificate.txt
             render-passkeys.env
             build-info.txt
@@ -168,7 +168,7 @@ jobs:
           python3 - <<'PY'
           import hashlib, os, pathlib, re, subprocess
           folder = pathlib.Path('release')
-          apk = folder / 'attendance-1.9.apk'
+          apk = folder / 'attendance-1.10.apk'
           tools = pathlib.Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0'
           certificate = subprocess.check_output([str(tools / 'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
           expected = pathlib.Path('mobile/android/signing-certificate.sha256').read_text().strip().replace(':', '').upper()
@@ -176,7 +176,7 @@ jobs:
           if not actual or actual.group(1).upper() != expected:
               raise SystemExit('Downloaded APK does not match the pinned release key. Publication stopped.')
           package = subprocess.check_output([str(tools / 'aapt'), 'dump', 'badging', str(apk)], text=True).splitlines()[0]
-          if not all(value in package for value in ["name='in.shikshavertex.attendance'", "versionName='1.9'", "versionCode='10'"]):
+          if not all(value in package for value in ["name='in.shikshavertex.attendance'", "versionName='1.10'", "versionCode='11'"]):
               raise SystemExit('Unexpected Android package or version. Publication stopped.')
           target = folder / 'attendance.apk'
           target.write_bytes(apk.read_bytes())
@@ -184,7 +184,7 @@ jobs:
           (folder / 'certificate.txt').write_text(certificate)
           (folder / 'release-notes.md').write_text(
               'Install **attendance.apk** directly on Android 9 or later. Share this installer or its download link as a WhatsApp document/link; no ZIP extraction is needed.\n\n'
-              'Version 1.9 adds live office-readiness indicators and confirmed attendance animations. The app opens anywhere; self check-in requires venue presence, the approved office connection and phone verification. Room codes remain removed.\n\n'
+              'Version 1.10 shows a connecting notice while the server starts, alongside office-readiness indicators and confirmed attendance animations. The app opens anywhere; self check-in requires venue presence, the approved office connection and phone verification. Room codes remain removed.\n\n'
               'Updates use the existing pinned signing identity. Existing server attendance records are retained.\n\n'
               f"Source commit: `{os.environ['GITHUB_SHA']}`\n\n"
               f'Signing certificate SHA-256: `{expected}`\n')
@@ -195,7 +195,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          release_tag="attendance-v1.9-${GITHUB_SHA:0:7}"
+          release_tag="attendance-v1.10-${GITHUB_SHA:0:7}"
           if gh release view "$release_tag" >/dev/null 2>&1; then
             if [ "$(gh release view "$release_tag" --json isDraft --jq .isDraft)" = 'true' ]; then
               gh release upload "$release_tag" release/attendance.apk release/SHA256SUMS release/certificate.txt release/build-info.txt --clobber
@@ -205,7 +205,7 @@ jobs:
             fi
           else
             gh release create "$release_tag" release/attendance.apk release/SHA256SUMS release/certificate.txt release/build-info.txt \
-              --target "$GITHUB_SHA" --title 'Shikshavertex Attendance 1.9' --notes-file release/release-notes.md --draft
+              --target "$GITHUB_SHA" --title 'Shikshavertex Attendance 1.10' --notes-file release/release-notes.md --draft
             gh release edit "$release_tag" --draft=false --latest
           fi
           printf 'Direct Android installer: https://github.com/%s/releases/latest/download/attendance.apk\n' "$GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"

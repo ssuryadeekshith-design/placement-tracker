@@ -45,6 +45,8 @@ class MainActivity : FragmentActivity() {
     private var actionGeneration = 0L
     private var actionJob: Job? = null
     private var policyJob: Job? = null
+    private var connectingToServer = false
+    private var connectionBanner: TextView? = null
     private var readinessJob: Job? = null
     private var session: JSONObject? = null
     private var registeredPasskey = false
@@ -91,7 +93,9 @@ class MainActivity : FragmentActivity() {
             }
             return
         }
-        try { auth = FirebaseAuth.getInstance(); api = ApiClient(this) }
+        try { auth = FirebaseAuth.getInstance(); api = ApiClient(this) { connecting -> lifecycleScope.launch {
+            connectingToServer=connecting; connectionBanner?.visibility=if(connecting) View.VISIBLE else View.GONE
+        } } }
         catch (_: Exception) { text("The app configuration is invalid. Ask the administrator for a configured build. No tracking is running."); return }
         lifecycleScope.launch { TrackingService.status.flow.collect {
             trackingLabel?.text = it.forUser(auth.currentUser?.uid.orEmpty()).message
@@ -142,7 +146,7 @@ class MainActivity : FragmentActivity() {
         body.addView(ui.text("SHIKSHAVERTEX", 12f, AttendanceUi.INDIGO, true))
         ui.space(body, 18)
         content = ui.card(body)
-        setContentView(ScrollView(this).apply { isFillViewport = true; fitsSystemWindows = true; addView(body) })
+        mountWithConnectionBanner(ScrollView(this).apply { isFillViewport = true; fitsSystemWindows = true; addView(body) }, false)
         heading("Employee workspace")
         message = text("").apply { setTextColor(AttendanceUi.RED); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
     }
@@ -178,9 +182,27 @@ class MainActivity : FragmentActivity() {
             v.setPadding(left + bars.left, top + bars.top, right + bars.right, bottom + maxOf(bars.bottom, ime.bottom))
             insets
         }
-        setContentView(view); ViewCompat.requestApplyInsets(view)
+        mountWithConnectionBanner(view, true); ViewCompat.requestApplyInsets(view)
         setBusy(busy)
     }
+    private fun mountWithConnectionBanner(view: View, edgeToEdge: Boolean) {
+        val ui=AttendanceUi(this)
+        val host=ui.column()
+        val banner=ui.text(ServerConnectionGate.MESSAGE,14f,AttendanceUi.AMBER).apply {
+            background=ui.rounded(android.graphics.Color.rgb(255,251,235))
+            setPadding(dp(16),dp(12),dp(16),dp(12))
+            visibility=if(connectingToServer) View.VISIBLE else View.GONE
+            accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        host.addView(banner,LinearLayout.LayoutParams(-1,-2))
+        host.addView(view,LinearLayout.LayoutParams(-1,0,1f))
+        if(edgeToEdge) ViewCompat.setOnApplyWindowInsetsListener(host) { _,insets ->
+            val bars=insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            banner.setPadding(dp(16),dp(12)+bars.top,dp(16),dp(12)); insets
+        }
+        connectionBanner=banner; setContentView(host)
+    }
+
     private fun runAction(action: suspend () -> Unit) {
         if (busy || !appAvailable) return
         val generation = ++actionGeneration

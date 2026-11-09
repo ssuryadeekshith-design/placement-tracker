@@ -13,10 +13,25 @@ import java.net.URL
 
 class ApiException(val status: Int, message: String, val code: String? = null) : Exception(message)
 
-class ApiClient(context: Context) {
+class ApiClient(context: Context, onConnecting: (Boolean) -> Unit = {}) {
     private val applicationContext = context.applicationContext
     private val preferences = context.applicationContext.getSharedPreferences("browser_binding", Context.MODE_PRIVATE)
     private val base = BuildConfig.API_BASE_URL.trimEnd('/')
+
+    private val server = ServerConnectionGate(probe = {
+        withContext(Dispatchers.IO) {
+            val connection=URL("$base/health").openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects=false
+            connection.connectTimeout=10000; connection.readTimeout=20000
+            try {
+                when(val status=connection.responseCode) {
+                    200 -> JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optString("status")=="ok"
+                    502,503,504 -> false
+                    else -> throw ApiException(status,"The attendance service could not be reached. Please retry or contact HR.")
+                }
+            } finally { connection.disconnect() }
+        }
+    }, onConnecting=onConnecting)
 
     init {
         val uri = URI(base)
@@ -29,7 +44,9 @@ class ApiClient(context: Context) {
     suspend fun json(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = JSONObject(request(path, method, body))
     suspend fun array(path: String): JSONArray = JSONArray(request(path))
 
-    suspend fun loadPolicy(): AttendancePolicy = withContext(Dispatchers.IO) {
+    suspend fun loadPolicy(): AttendancePolicy {
+        server.awaitReady()
+        return withContext(Dispatchers.IO) {
         val connection = URL("$base/venue").openConnection() as HttpURLConnection
         connection.instanceFollowRedirects = false
         connection.connectTimeout = 15000
@@ -43,10 +60,13 @@ class ApiClient(context: Context) {
         } finally { connection.disconnect() }
     }
 
+    }
+
     private suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): String {
         require(path.startsWith('/') && !path.startsWith("//"))
         val user = FirebaseAuth.getInstance().currentUser ?: throw ApiException(401, "Sign in first.")
         if (!user.isEmailVerified) throw ApiException(403, "Verify your email before continuing.")
+        server.awaitReady()
         val attendance = path.substringBefore('?') in setOf("/attendance", "/attendance/manual")
         if (attendance) AttendanceWifi.requireConnected(applicationContext)
         for (attempt in 0..1) {

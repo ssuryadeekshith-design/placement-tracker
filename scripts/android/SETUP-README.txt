@@ -1,4 +1,4 @@
-Shikshavertex 1.9: owner-approved fresh-install migration
+Shikshavertex 1.10: owner-approved fresh-install migration
 
 The unsigned APK in this ZIP cannot be installed directly.
 Reuse the release key already created on the owner's Mac. Do not create a replacement identity.
@@ -16,7 +16,7 @@ On the owner's Mac (Java 21 is already installed):
    Back up that file privately. Keep its password separately.
    Re-running the script reuses that key; it does not replace it.
 5. The SIGNED APK is saved separately at:
-   ~/Desktop/Shikshavertex Attendance/attendance-1.9.apk
+   ~/Desktop/Shikshavertex Attendance/attendance-1.10.apk
 6. Send ONLY the printed Public SHA256 line to the administrator/assistant.
    Do not send the private key or password in chat, Drive shares or GitHub files.
 7. Wait until the server's Android association includes that certificate.
