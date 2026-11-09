@@ -8,61 +8,91 @@ on:
       - 'mobile/android/**'
 
 concurrency:
-  group: attendance-debug-build
+  group: attendance-signed-build
   cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - name: Reuse the development signing identity across builds
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: attendance-debug-signing-v1
-      - name: Build and test Android app
-        working-directory: mobile/android
-        run: bash gradlew :app:assembleDebug :app:testDebugUnitTest -PATTENDANCE_API_URL=https://placement-tracker-lyjf.onrender.com/api
-      - name: Verify the built APK contains the hosted API address
+      - name: Restore the owner's signing key from repository secrets
         env:
-          APK_PATH: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           python3 - <<'PY'
-          import os, subprocess, zipfile
-          endpoint = 'https://placement-tracker-lyjf.onrender.com/api'
-          with zipfile.ZipFile(os.environ['APK_PATH']) as apk:
-              dex_files = [name for name in apk.namelist() if name.startswith('classes') and name.endswith('.dex')]
-              assert any(endpoint.encode() in apk.read(name) for name in dex_files), 'Attendance API address is missing from the APK'
-          package = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/35.0.0/aapt', 'dump', 'badging', os.environ['APK_PATH']], text=True).splitlines()[0]
-          with open('build-info.txt', 'w') as info:
-              info.write(f"{package}\nCommit: {os.environ['GITHUB_SHA']}\nRun: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\nAttendance API: {endpoint}\n")
+          import base64, os, pathlib
+          required = ['KEYSTORE_BASE64', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD']
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Signing secrets are missing. Follow docs/android-signing-setup.md; no new signing key will be generated.')
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'attendance-signing.keystore'
+          target.write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'], validate=True))
+          target.chmod(0o600)
           PY
-      - name: Verify APK signature
+      - name: Confirm the saved certificate before building
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs mobile/android/app/build/outputs/apk/debug/app-debug.apk | tee certificate.txt
-          awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print "ANDROID_SHA256_CERT_FINGERPRINTS=" toupper($2)}' certificate.txt > render-passkeys.env
-          test -s render-passkeys.env
+          keytool -exportcert -keystore "$RUNNER_TEMP/attendance-signing.keystore" -alias "$KEY_ALIAS" -storepass:env STORE_PASSWORD -file "$RUNNER_TEMP/attendance-signing.der"
           python3 - <<'PY'
-          import pathlib, re
-          # Preserve the identity of the owner's verified version 1.2 APK.
+          import hashlib, os, pathlib
+          expected = 'D72678D6992A09AC549983C370851FCAB3F6635BB3BB727FC6F7DDADFF433D25'
+          actual = hashlib.sha256((pathlib.Path(os.environ['RUNNER_TEMP']) / 'attendance-signing.der').read_bytes()).hexdigest().upper()
+          print('Signing certificate SHA-256: ' + ':'.join(actual[n:n+2] for n in range(0, len(actual), 2)))
+          if actual != expected:
+              raise SystemExit('This key does not match the preserved version 1.2 update certificate. Verify the installed APK certificate before planning a migration; the update guard has not been removed.')
+          PY
+      - name: Build and check the release candidate
+        working-directory: mobile/android
+        run: bash gradlew --no-daemon :app:assembleRelease :app:testReleaseUnitTest :app:lintRelease -PATTENDANCE_API_URL=https://placement-tracker-lyjf.onrender.com/api
+      - name: Sign with the confirmed original key
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$RUNNER_TEMP/attendance-signing.keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out attendance-1.6.apk mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Verify the signed APK and public configuration
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs attendance-1.6.apk > certificate.txt
+          python3 - <<'PY'
+          import os, pathlib, re, subprocess, zipfile
           expected = 'D72678D6992A09AC549983C370851FCAB3F6635BB3BB727FC6F7DDADFF433D25'
           match = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+)', pathlib.Path('certificate.txt').read_text())
-          assert match and match.group(1).upper() == expected, 'Signing key changed. Restore the version 1.2 signing keystore before publishing an update; a new key cannot update existing installations.'
+          if not match or match.group(1).upper() != expected:
+              raise SystemExit('The signed APK certificate does not match the verified update identity.')
+          endpoint = 'https://placement-tracker-lyjf.onrender.com/api'
+          with zipfile.ZipFile('attendance-1.6.apk') as apk:
+              dex = [name for name in apk.namelist() if name.startswith('classes') and name.endswith('.dex')]
+              if not any(endpoint.encode() in apk.read(name) for name in dex):
+                  raise SystemExit('Hosted API configuration missing from the APK.')
+          package = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/35.0.0/aapt', 'dump', 'badging', 'attendance-1.6.apk'], text=True).splitlines()[0]
+          if "name='in.shikshavertex.attendance'" not in package:
+              raise SystemExit('Wrong Android package; APK will not be published.')
+          pathlib.Path('render-passkeys.env').write_text('ANDROID_SHA256_CERT_FINGERPRINTS=' + expected + '\n')
+          pathlib.Path('build-info.txt').write_text(f"{package}\nCommit: {os.environ['GITHUB_SHA']}\nRun: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\nAttendance API: {endpoint}\nSigned original-identity release. Verify Render association and physical phone before employee rollout.\n")
           PY
       - uses: actions/upload-artifact@v4
         with:
           name: attendance-android
           path: |
-            mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            attendance-1.6.apk
             certificate.txt
             render-passkeys.env
             build-info.txt
           if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/attendance-signing.keystore" "$RUNNER_TEMP/attendance-signing.der"
