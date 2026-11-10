@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from './api';
+import EmployeeEmailImport from './EmployeeEmailImport';
 import './WorkforcePanels.css';
 const message = error => error.response?.data?.error || 'Could not contact the employee approval service.';
 const matches = (employee, query) => {
-  const text = `${employee.employeeId || ''} ${employee.fullName || ''} ${employee.designation || ''} ${employee.department || ''} ${employee.team || ''} ${employee.email || ''}`.toLowerCase();
+  const text = `${employee.employeeId || ''} ${employee.fullName || ''} ${employee.designation || ''} ${employee.department || ''} ${employee.team || ''} ${employee.email || ''} ${employee.registrationEmail || ''}`.toLowerCase();
   return query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(term => text.includes(term));
 };
 const eligibleFor = (employee, request) => employee.active === true && /^SV\d{3}$/.test(employee.employeeId || '') &&
-  (!employee.uid || employee.uid === request.uid) && (!employee.email || employee.email === request.email);
+  (!employee.uid || employee.uid === request.uid) && (!employee.email || employee.email === request.email) &&
+  (!employee.registrationEmail || employee.registrationEmail === request.email);
 function validateDirectory(directory, pending) {
   if (!Array.isArray(directory) || !Array.isArray(pending) ||
     !directory.every(row => row && typeof row.employeeId === 'string' && typeof row.fullName === 'string' &&
       (row.uid == null || typeof row.uid === 'string') && (row.email == null || typeof row.email === 'string') &&
+      (row.registrationEmail == null || typeof row.registrationEmail === 'string') &&
       ['designation', 'department', 'team'].every(key => row[key] == null || typeof row[key] === 'string')) ||
     !pending.every(row => row && typeof row.id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(row.id) && row.uid === row.id && typeof row.fullName === 'string' && typeof row.email === 'string'))
     throw new Error('Directory data is incomplete. Refresh before reviewing requests.');
@@ -141,6 +144,7 @@ export function EmployeeAdministration({ onChanged }) {
     <header className="workforce-panel-heading"><div><p className="eyebrow">People & access</p><h2 id="workforce-admin-title">Employee directory and HR approvals</h2><p>Match the right person to the right work account.</p></div><button className="secondary" type="button" onClick={reload} disabled={busy}>{busy ? 'Refreshing…' : 'Refresh directory & requests'}</button></header>
     <p className="field-help">Only a verified HR administrator can approve accounts. Job titles and team membership do not grant administrator access. No login linked describes the directory link only; it does not prove that no Firebase account exists.</p>
     {error && <p role="alert" className="alert error">{error}</p>}{notice && <p role="status" className="alert success">{notice}</p>}
+    <EmployeeEmailImport disabled={busy} onBusy={setBusy} onImported={async () => { clearSnapshot(); await load(++sequence.current); onChanged?.(); }} />
     {busy && !loaded && <p role="status" className="workforce-notice">Loading the employee directory and approval queue…</p>}
     <div className="workforce-split">
       <section className="approval-queue" aria-labelledby="pending-requests-title"><div className="workforce-subheading"><h3 id="pending-requests-title">Pending employee requests ({loaded ? requests.length : '—'})</h3><span className="workforce-badge warning">HR review</span></div>
@@ -171,7 +175,7 @@ export function EmployeeAdministration({ onChanged }) {
         <p className="field-help">{loaded ? `${filtered.length} of ${employees.length} profiles.` : 'Directory counts are not loaded yet.'} A linked profile is not a live Firebase Authentication status check. Auth badges reflect the latest loaded lookup; they do not grant attendance approval or an HR role.</p>
         {checkedAt && <p className="field-help">Directory loaded: {checkedAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'medium' })} IST. Refresh to recheck account status.</p>}
         {loaded && !filtered.length && <p className="workforce-empty">No employee profiles match these filters.</p>}
-        <div className="directory-list" role="region" aria-label="Employee directory results" tabIndex={0}>{filtered.map(employee => <article key={employee.employeeId} className="directory-person"><div className="workforce-avatar" aria-hidden="true">{String(employee.fullName || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(name => name[0]).join('').toUpperCase()}</div><div><div className="workforce-subheading"><strong>{employee.fullName}</strong><span className={`workforce-badge ${employee.uid && employee.email ? 'neutral' : employee.uid ? 'warning' : 'muted'}`}>{employee.uid && employee.email ? 'Profile linked' : employee.uid ? 'Profile link incomplete' : 'No login linked'}</span><span className={`workforce-badge ${employee.active === true ? 'neutral' : employee.active === false ? 'warning' : 'muted'}`}>{employee.active === true ? 'Directory profile active' : employee.active === false ? 'Directory profile inactive' : 'Directory activity unavailable'}</span><AuthStatusBadge status={employee.authStatus} linked={Boolean(employee.uid)} /></div><p>{employee.employeeId} · {employee.designation}</p><p>{employee.department} · {employee.team}</p><p className="workforce-email">{employee.email || 'No login email linked yet'}</p></div></article>)}</div>
+        <div className="directory-list" role="region" aria-label="Employee directory results" tabIndex={0}>{filtered.map(employee => <article key={employee.employeeId} className="directory-person"><div className="workforce-avatar" aria-hidden="true">{String(employee.fullName || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(name => name[0]).join('').toUpperCase()}</div><div><div className="workforce-subheading"><strong>{employee.fullName}</strong><span className={`workforce-badge ${employee.uid && employee.email ? 'neutral' : employee.uid ? 'warning' : 'muted'}`}>{employee.uid && employee.email ? 'Profile linked' : employee.uid ? 'Profile link incomplete' : 'No login linked'}</span><span className={`workforce-badge ${employee.active === true ? 'neutral' : employee.active === false ? 'warning' : 'muted'}`}>{employee.active === true ? 'Directory profile active' : employee.active === false ? 'Directory profile inactive' : 'Directory activity unavailable'}</span><AuthStatusBadge status={employee.authStatus} linked={Boolean(employee.uid)} /></div><p>{employee.employeeId} · {employee.designation}</p><p>{employee.department} · {employee.team}</p><p className="workforce-email">{employee.email || employee.registrationEmail || 'No login email linked yet'}{!employee.email && employee.registrationEmail && ' · Official registration email; login not linked'}</p></div></article>)}</div>
       </section>
     </div>
   </section>;

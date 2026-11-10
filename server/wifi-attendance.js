@@ -18,7 +18,7 @@ function checkAttendanceWifi(observation, settings = {}, time, requestIp) {
     const ssid = settings.ssid || ATTENDANCE_SSID;
     const { transport, observedAt, bssid } = observation || {};
     if (!observation || transport !== 'wifi' || observation.ssid !== ssid) {
-        throw new HttpError(403, `Connect the Android phone to office network ${ssid} before marking attendance. Browser check-in cannot verify the connected office network name.`);
+        throw new HttpError(403, `Connect the phone to office network ${ssid} before marking attendance. Browser check-in cannot verify the connected office network name.`);
     }
     if (!Number.isFinite(time) || typeof observedAt !== 'number' || !Number.isFinite(observedAt) || observedAt < time - 10000 || observedAt > time + 5000) {
         throw new HttpError(403, 'The office network connection check expired. Reconnect to the required office network and try again.');

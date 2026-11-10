@@ -28,3 +28,6 @@
 
 /* Explicit identity matching, scoped to the HR directory screen. */
 .workforce-admin .directory-match-confirm{display:flex;align-items:flex-start;gap:9px;font-size:.78rem;line-height:1.7;margin-top:14px}.workforce-admin .directory-match-confirm input[type=checkbox]{width:18px;height:18px;min-height:18px;margin:4px 0 0;padding:0;flex:0 0 18px;accent-color:#2563eb}.workforce-admin .directory-match-summary{padding:12px;border:1px solid #dbeafe;background:#eff6ff;border-radius:10px;font-size:.77rem;color:#1e40af;overflow-wrap:anywhere}.workforce-admin input:focus-visible,.workforce-admin select:focus-visible,.workforce-admin button:focus-visible,.workforce-admin .directory-list:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+ .email-import { margin: 1rem 0; padding: 1rem; border: 1px solid #c7d2fe; border-radius: 12px; background: #f8faff; }
+ .email-import summary { cursor: pointer; color: #3730a3; font-weight: 650; }
+ .email-import input[type=file] { max-width: 100%; }
