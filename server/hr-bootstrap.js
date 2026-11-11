@@ -1,11 +1,14 @@
-const { HttpError, normalizeEmail } = require('./security');
+const { HttpError, normalizeEmail, digest } = require('./security');
 
 // Provision only the explicitly configured, verified mailbox once. No title or
 // client-submitted role grants privileges. Completed bootstrap never regrants.
 async function bootstrapHr({ identity, db, auth, config, now }) {
     const email = normalizeEmail(identity.email);
-    if (!config.bootstrapHrEmail || email !== config.bootstrapHrEmail) return;
-    const stateRef = db.collection('System').doc('initial-hr-admin');
+    const initialAdmin = Boolean(config.bootstrapHrEmail && email === config.bootstrapHrEmail);
+    if (!initialAdmin && !(config.additionalHrAdminEmails || []).includes(email)) return;
+    // Preserve the original administrator's existing one-time grant. Each new
+    // owner-designated mailbox has its own state so it cannot replace that UID.
+    const stateRef = db.collection('System').doc(initialAdmin ? 'initial-hr-admin' : `additional-hr-admin-${digest(email)}`);
     const stateSnap = await stateRef.get();
     if (stateSnap.exists && stateSnap.data().status === 'granted') return;
     if (!identity.email_verified) return;
@@ -22,6 +25,7 @@ async function bootstrapHr({ identity, db, auth, config, now }) {
             if (previous.status === 'granted') return;
         }
         if (approved.exists && (approved.data().enabled !== true || (approved.data().uid && approved.data().uid !== identity.uid))) throw new HttpError(403, 'Revoked or reassigned HR access cannot be bootstrapped.');
+        if (user.exists && normalizeEmail(user.data().email) !== email) throw new HttpError(403, 'Existing account identity requires administrator recovery.');
         transaction.set(emailRef, { email, uid: identity.uid, enabled: true }, { merge: true });
         if (!user.exists) transaction.create(userRef, { uid: identity.uid, email, fullName: account.displayName || '', createdAt: new Date(now()).toISOString() });
         transaction.set(stateRef, { email, uid: identity.uid, status: 'pending' }, { merge: true });

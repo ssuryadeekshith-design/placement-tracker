@@ -55,11 +55,16 @@ function loadConfig(env = process.env) {
     });
     const bootstrapHrEmail = (env.HR_ADMIN_EMAIL ?? 'hr@shikshavertex.in').trim().toLowerCase();
     if (bootstrapHrEmail && !/^[^\s/@]+@shikshavertex\.in$/.test(bootstrapHrEmail)) throw new Error('Invalid HR_ADMIN_EMAIL');
+    // Additional administrator explicitly authorized by the application owner.
+    // These mailboxes get the same role, after verified ownership, once per UID.
+    const additionalHrAdminEmails = (env.HR_ADDITIONAL_ADMIN_EMAILS ?? 'hr_kowshik@shikshavertex.in').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+    if (additionalHrAdminEmails.some(value => !/^[^\s/@]+@shikshavertex\.in$/.test(value))) throw new Error('Invalid HR_ADDITIONAL_ADMIN_EMAILS');
     return {
         production,
         deploymentCommit: /^[0-9a-f]{7,40}$/i.test(env.RENDER_GIT_COMMIT || '') ? env.RENDER_GIT_COMMIT : null,
         attendanceViewerEmails: [...new Set(attendanceViewerEmails)],
         bootstrapHrEmail,
+        additionalHrAdminEmails: [...new Set(additionalHrAdminEmails)],
         wifi: { required: true, ssid: ATTENDANCE_SSID, allowedBssids, allowedIps },
         access: { required: false, leaseSeconds: 30, maxLocationAgeMs: 15000 },
         biometrics: {

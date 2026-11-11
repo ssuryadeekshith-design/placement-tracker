@@ -26,6 +26,7 @@ async function fixture(t, extra = {}, venueOverrides = {}, access = { required: 
   const tokens = {
     alice: { uid: 'alice', email: ALICE, email_verified: true, name: 'Supriti' },
     hr: { uid: 'hr', email: 'hr@shikshavertex.in', email_verified: true },
+    kowshik: { uid: 'kowshik', email: 'hr_kowshik@shikshavertex.in', email_verified: true },
     hire: { uid: 'hire', email: 'new.employee@shikshavertex.in', email_verified: true },
     hire2: { uid: 'hire2', email: 'second.employee@shikshavertex.in', email_verified: true },
     bob: { uid: 'bob', email: BOB, email_verified: true },
@@ -92,6 +93,23 @@ test('only HR can privately import official emails, without creating login permi
   assert.equal(result.status, 200); assert.equal(result.data.imported, 1);
   assert.equal(f.db.dump()['Employees/SV001'].registrationEmail, 'test.joe@shikshavertex.in');
   assert.equal(f.db.dump()['AllowedEmails/test.joe@shikshavertex.in'], undefined);
+});
+
+test('additional HR sign-in refreshes its token and receives administrator routes, while employees remain restricted', async t => {
+  const f = await fixture(t);
+  f.config.additionalHrAdminEmails = loadConfig({}).additionalHrAdminEmails;
+  const first = await f.request('/session', { token: 'kowshik', body: {} });
+  assert.equal(first.status, 401); assert.equal(first.data.code, 'TOKEN_REFRESH_REQUIRED');
+  const administrator = await f.session('kowshik');
+  assert.equal(administrator.data.user.role, 'committee');
+  assert.equal(administrator.data.user.canViewAllAttendance, true);
+  for (const route of ['/employees', '/registration-requests', '/students']) {
+    assert.equal((await f.request(route, { token: 'kowshik', cookie: administrator.cookie })).status, 200, route);
+  }
+  const created = await f.request('/events', { token: 'kowshik', cookie: administrator.cookie, body: { title: 'Daily office attendance', date: '2026-11-04', isMandatory: true } });
+  assert.equal(created.status, 201);
+  const employee = await f.session();
+  assert.equal((await f.request('/employees', { cookie: employee.cookie })).status, 403);
 });
 
 test('HR approval cannot link an account to a different official registration email', async t => {
