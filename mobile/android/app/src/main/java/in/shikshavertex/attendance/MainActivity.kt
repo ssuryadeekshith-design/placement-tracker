@@ -48,6 +48,7 @@ class MainActivity : FragmentActivity() {
     private var connectingToServer = false
     private var connectionBanner: TextView? = null
     private var readinessJob: Job? = null
+    private var readinessScreen: EmployeeDashboardScreen? = null
     private var session: JSONObject? = null
     private var registeredPasskey = false
     private var biometricConfigured = false
@@ -109,7 +110,7 @@ class MainActivity : FragmentActivity() {
         if (::api.isInitialized) {
             AttendanceWifi.startObserving(this)
             refreshAccessPolicy()
-            dashboardScreen?.let { if(it.readinessEnabled) startReadiness(it) }
+            dashboardScreen?.let { resumeReadiness(it) }
         }
     }
     override fun onPause() {
@@ -213,7 +214,7 @@ class MainActivity : FragmentActivity() {
                     if (restoreAfterPrompt) { restoreAfterPrompt = false; runCatching { renderDashboard() } }
                     showMessage(friendlyError(error))
                 }
-            } finally { if (generation == actionGeneration) { busy = false; buttons.forEach { it.isEnabled = true }; designedBusy?.invoke(false) } }
+            } finally { if (generation == actionGeneration) { busy = false; buttons.forEach { it.isEnabled = true }; designedBusy?.invoke(false); dashboardScreen?.let { resumeReadiness(it) } } }
         }
     }
     private fun showDesignLoading(title: String) {
@@ -421,7 +422,7 @@ class MainActivity : FragmentActivity() {
         catch (error: Exception) { dashboardScreen?.invalidateCheckIn(); throw error }
     }
     private fun mountDashboard(model: EmployeeDashboardModel) {
-        readinessJob?.cancel(); readinessJob=null
+        stopReadiness()
         lastDashboardModel = model
         val screen = EmployeeDashboardScreen(this, model, EmployeeDashboardActions(
             onRefresh = { runAction { refreshDashboard() } },
@@ -436,17 +437,16 @@ class MainActivity : FragmentActivity() {
             onMaps = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.app.goo.gl/1t5uN5hefMxJEWKdA"))) },
             onCheckReadiness = { screen ->
                 if(!busy && pendingPermissions==null) requestPermissionsThen(false) {
-                    if(dashboardScreen===screen && screen.root.isAttachedToWindow) { screen.enableReadiness(); startReadiness(screen) }
+                    if(dashboardScreen===screen && screen.root.isAttachedToWindow) { stopReadiness(); screen.enableReadiness(); startReadiness(screen) }
                 }
             },
             onReadinessVisibility = { screen, visible ->
-                if(dashboardScreen===screen) {
-                    if(visible && screen.readinessEnabled) startReadiness(screen)
-                    else if(!visible) stopReadiness()
-                }
+                if(visible && dashboardScreen===screen) resumeReadiness(screen)
+                else if(!visible && readinessScreen===screen) stopReadiness()
             }
         ))
         dashboardScreen = screen; viewerScreen = null
+        if (LocationAccess.precisePermission(this)) screen.enableReadiness()
         mountDesigned(screen.root, screen::setBusy, screen::showMessage, screen::showNotice)
     }
     private fun officeConnectionObserved(record: JSONObject): Boolean = record.optJSONObject("wifi")?.let {
@@ -464,15 +464,29 @@ class MainActivity : FragmentActivity() {
         val age = (android.os.SystemClock.elapsedRealtimeNanos()-point.elapsedRealtimeNanos)/1000000
         return VenueGate.evaluate(VenueGate.Fix(point.latitude,point.longitude,point.accuracy.toDouble(),point.time,age,mocked),attendanceVenue())
     }
-    private fun stopReadiness() { readinessJob?.cancel(); readinessJob=null; dashboardScreen?.resetReadiness() }
+    private fun stopReadiness() {
+        readinessJob?.cancel(); readinessJob=null
+        readinessScreen?.resetReadiness(); readinessScreen=null
+    }
+    private fun resumeReadiness(screen: EmployeeDashboardScreen) {
+        if (dashboardScreen !== screen) return
+        if (!LocationAccess.precisePermission(this)) {
+            stopReadiness(); screen.requireLocationPermission(); return
+        }
+        screen.enableReadiness()
+        startReadiness(screen)
+    }
     private fun startReadiness(screen: EmployeeDashboardScreen) {
-        readinessJob?.cancel()
-        if(!screen.readinessEnabled || dashboardScreen!==screen || !screen.root.isAttachedToWindow ||
-            screen.employeeUid != auth.currentUser?.uid || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
+        if(!screen.readinessEnabled || dashboardScreen!==screen || !OfficeReadinessPolicy.canMonitor(
+                LocationAccess.precisePermission(this), screen.root.isAttachedToWindow,
+                lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED), screen.employeeUid == auth.currentUser?.uid)) return
+        if(readinessJob?.isActive == true) return
+        readinessScreen=screen
         readinessJob=lifecycleScope.launch {
             kotlinx.coroutines.coroutineScope {
-                fun visible() = dashboardScreen===screen && screen.root.isAttachedToWindow &&
-                    screen.employeeUid==auth.currentUser?.uid && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                fun visible() = dashboardScreen===screen && OfficeReadinessPolicy.canMonitor(
+                    LocationAccess.precisePermission(this@MainActivity), screen.root.isAttachedToWindow,
+                    lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED), screen.employeeUid==auth.currentUser?.uid)
                 launch {
                     while(visible()) {
                         if(!busy) {

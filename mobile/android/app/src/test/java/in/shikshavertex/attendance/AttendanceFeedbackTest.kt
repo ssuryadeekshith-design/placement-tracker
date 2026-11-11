@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AttendanceFeedbackTest {
+    @Test fun readinessResumesOnlyForTheVisiblePermittedCurrentAccount() {
+        assertTrue(OfficeReadinessPolicy.canMonitor(true, true, true, true))
+        assertFalse(OfficeReadinessPolicy.canMonitor(false, true, true, true))
+        assertFalse(OfficeReadinessPolicy.canMonitor(true, false, true, true))
+        assertFalse(OfficeReadinessPolicy.canMonitor(true, true, false, true))
+        assertFalse(OfficeReadinessPolicy.canMonitor(true, true, true, false))
+    }
     private val now=1800000000000L
     private val venue=VenueGate.Venue()
     private fun fix(offset: Double=0.0,accuracy: Double=5.0,age: Long=0L,mocked: Boolean=false)=

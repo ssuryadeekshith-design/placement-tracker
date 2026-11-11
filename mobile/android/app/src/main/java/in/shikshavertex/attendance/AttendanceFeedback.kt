@@ -3,6 +3,12 @@ package `in`.shikshavertex.attendance
 import java.time.Instant
 
 enum class ReadinessState { UNKNOWN, CHECKING, READY, FAILED }
+object OfficeReadinessPolicy {
+    // Permission allows a local foreground check, never an attendance write or
+    // a background sharing session. All four conditions must remain true.
+    fun canMonitor(precisePermission: Boolean, attached: Boolean, resumed: Boolean, matchingAccount: Boolean) =
+        precisePermission && attached && resumed && matchingAccount
+}
 data class ReadinessSignal(val state: ReadinessState = ReadinessState.UNKNOWN,
                            val detail: String = "Not checked", val observedAt: Long = 0L) {
     fun fresh(now: Long, maxAge: Long = 15000): ReadinessSignal =

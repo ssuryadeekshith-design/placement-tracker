@@ -105,6 +105,7 @@ class EmployeeDashboardScreen(
     private var connectionSignal = ReadinessSignal()
     private lateinit var gpsPill: TextView
     private lateinit var connectionPill: TextView
+    private lateinit var readinessButton: Button
     private lateinit var feedback: AttendanceFeedbackPanel
     val employeeUid get() = model.employeeUid
 
@@ -216,11 +217,30 @@ class EmployeeDashboardScreen(
         ui.section(card, "Office readiness", "Check your position and office connection before marking attendance.")
         gpsPill = ui.chip(card, "Venue GPS · Not checked", Tone.WARNING)
         connectionPill = ui.chip(card, "Office connection · Not checked", Tone.WARNING)
-        card.addView(ui.text("Check office readiness uses precise location while this dashboard is visible. These checks stay on this phone; they do not save attendance or start daily location sharing. GPS checks building proximity, not a floor.", 12f, AttendanceUi.MUTED))
-        actionButton(card, "Check office readiness") { actions.onCheckReadiness(this) }
+        card.addView(ui.text("With precise location allowed, readiness refreshes automatically while this dashboard is visible. These checks stay on this phone; they do not save attendance or start daily location sharing. Attendance checks your current position and office connection again when you submit. GPS checks building proximity, not a floor.", 12f, AttendanceUi.MUTED))
+        readinessButton = actionButton(card, "Check office readiness") { actions.onCheckReadiness(this) }
     }
-    fun enableReadiness() { readinessEnabled = true }
-    fun resetReadiness() { gpsSignal = ReadinessSignal(); connectionSignal = ReadinessSignal(); renderReadiness() }
+    fun enableReadiness() {
+        if (!readinessEnabled || gpsSignal.detail.startsWith("Paused")) {
+            gpsSignal = ReadinessSignal(ReadinessState.CHECKING, "Checking precise location…")
+            connectionSignal = ReadinessSignal(ReadinessState.CHECKING, "Checking current office connection…")
+        }
+        readinessEnabled = true
+        readinessButton.text = "Refresh office readiness"
+        renderReadiness()
+    }
+    fun requireLocationPermission() {
+        readinessEnabled = false
+        gpsSignal = ReadinessSignal(detail = "Precise location permission needed")
+        connectionSignal = ReadinessSignal(detail = "Allow precise location to confirm the office connection")
+        readinessButton.text = "Allow precise location & check"
+        renderReadiness()
+    }
+    fun resetReadiness() {
+        gpsSignal = ReadinessSignal(detail = "Paused; rechecking when the dashboard is active")
+        connectionSignal = ReadinessSignal(detail = "Paused; rechecking when the dashboard is active")
+        renderReadiness()
+    }
     fun checkingGps() {
         gpsSignal = gpsSignal.fresh(System.currentTimeMillis())
         if(gpsSignal.state==ReadinessState.UNKNOWN) gpsSignal=ReadinessSignal(ReadinessState.CHECKING,"Checking precise location…")
