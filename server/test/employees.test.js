@@ -75,6 +75,7 @@ test('additional HR authorization requires the exact verified enabled mailbox an
     const other = hrFixture({}, 'kowshik@shikshavertex.in', 'kowshik');
     await bootstrapHr(other.args); assert.equal(other.writes(), 0);
     assert.deepEqual(loadConfig({ HR_ADDITIONAL_ADMIN_EMAILS: '' }).additionalHrAdminEmails, []);
+    assert.deepEqual(loadConfig({}).additionalHrAdminEmails, ['hr_kowshik@shikshavertex.in', 'surya_deekshith@shikshavertex.in']);
     assert.throws(() => loadConfig({ HR_ADDITIONAL_ADMIN_EMAILS: 'someone@example.com' }), /Invalid HR_ADDITIONAL_ADMIN_EMAILS/);
 });
 test('bootstrap cannot resurrect revoked HR access or an unverified/disabled mailbox', async () => {

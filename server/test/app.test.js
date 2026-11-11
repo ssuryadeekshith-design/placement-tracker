@@ -121,6 +121,31 @@ test('HR approval cannot link an account to a different official registration em
   assert.equal(f.db.dump()['AllowedEmails/new.employee@shikshavertex.in'], undefined);
 });
 
+test('Surya gains the same HR role while existing employee, device and viewer bindings are preserved', async t => {
+  const email = 'surya_deekshith@shikshavertex.in';
+  const f = await fixture(t, { [`AllowedEmails/${email}`]: { enabled: true, uid: 'surya' }, 'Users/surya': { uid: 'surya', email, employeeId: 'SV064', fullName: 'Surya Deekshith Palakurthi', department: 'Business Operations' } });
+  f.config.attendanceViewerEmails = loadConfig({}).attendanceViewerEmails;
+  const previous = await f.session('surya');
+  assert.equal(previous.data.user.role, 'student');
+  const profile = f.db.dump()['Users/surya'];
+  const viewer = f.db.dump()[`AttendanceViewers/${email}`];
+  const devices = Object.entries(f.db.dump()).filter(([key]) => key.startsWith('Devices/'));
+  f.config.additionalHrAdminEmails = loadConfig({}).additionalHrAdminEmails;
+  const refresh = await f.request('/session', { token: 'surya', cookie: previous.cookie, body: {} });
+  assert.equal(refresh.status, 401); assert.equal(refresh.data.code, 'TOKEN_REFRESH_REQUIRED');
+  const administrator = await f.session('surya', previous.cookie);
+  assert.equal(administrator.data.user.role, 'committee');
+  assert.equal(administrator.data.user.employeeId, 'SV064');
+  assert.equal((await f.request('/employees', { token: 'surya', cookie: previous.cookie })).status, 200);
+  assert.equal((await f.request('/registration-requests', { token: 'surya', cookie: previous.cookie })).status, 200);
+  assert.deepEqual(f.db.dump()['Users/surya'], profile);
+  assert.deepEqual(f.db.dump()[`AttendanceViewers/${email}`], viewer);
+  assert.deepEqual(Object.entries(f.db.dump()).filter(([key]) => key.startsWith('Devices/')), devices);
+  const other = await f.session('pallavi');
+  assert.equal(other.data.user.role, 'attendance-viewer');
+  assert.equal((await f.request('/employees', { token: 'pallavi', cookie: other.cookie })).status, 403);
+});
+
 test('Apple passkey association advertises only configured app IDs', async t => {
   const f = await fixture(t);
   // The public association is deliberately unauthenticated, with no dynamic Host reflection.

@@ -57,7 +57,7 @@ function loadConfig(env = process.env) {
     if (bootstrapHrEmail && !/^[^\s/@]+@shikshavertex\.in$/.test(bootstrapHrEmail)) throw new Error('Invalid HR_ADMIN_EMAIL');
     // Additional administrator explicitly authorized by the application owner.
     // These mailboxes get the same role, after verified ownership, once per UID.
-    const additionalHrAdminEmails = (env.HR_ADDITIONAL_ADMIN_EMAILS ?? 'hr_kowshik@shikshavertex.in').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+    const additionalHrAdminEmails = (env.HR_ADDITIONAL_ADMIN_EMAILS ?? 'hr_kowshik@shikshavertex.in,surya_deekshith@shikshavertex.in').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
     if (additionalHrAdminEmails.some(value => !/^[^\s/@]+@shikshavertex\.in$/.test(value))) throw new Error('Invalid HR_ADDITIONAL_ADMIN_EMAILS');
     return {
         production,

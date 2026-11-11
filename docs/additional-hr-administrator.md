@@ -1,7 +1,8 @@
 # Additional HR administrator
 
-The owner authorized `hr_kowshik@shikshavertex.in` to have the same application HR
-permissions as `hr@shikshavertex.in`. Both receive the existing `committee` role:
+The owner authorized `hr_kowshik@shikshavertex.in` and
+`surya_deekshith@shikshavertex.in` to have the same application HR permissions as
+`hr@shikshavertex.in`. All three receive the existing `committee` role:
 employee approvals/rejections, session management, all-employee attendance and CSV
 reports, audited manual attendance overrides, and HR movement-report access.
 Attendance overrides retain the same office checks and audit requirements.
@@ -20,6 +21,6 @@ restored. Existing administrator access and all other employee roles remain as
 they were. No Firebase Console, Render, GitHub or Google Workspace privileges
 are granted by this application role.
 
-The default additional-mailbox list contains only the owner-authorized mailbox.
+The default additional-mailbox list contains only the two owner-authorized mailboxes.
 Operators can override it with `HR_ADDITIONAL_ADMIN_EMAILS`; an empty value disables
 new additional grants. This setting is never read from a client request.
