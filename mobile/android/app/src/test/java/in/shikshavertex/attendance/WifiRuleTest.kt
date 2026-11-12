@@ -20,4 +20,11 @@ class WifiRuleTest {
         for (ssid in listOf("", "\"\"", "<unknown ssid>", "\"<unknown ssid>\"")) assertNull(WifiRule.normalizeSsid(ssid))
         assertEquals("SSID with spaces", WifiRule.normalizeSsid("\"SSID with spaces\""))
     }
+    @Test fun anActiveRedactedNetworkIsReportedAsUnconfirmedRatherThanDisconnected() {
+        val message = WifiRule.rejection("<unknown ssid>", true, false)!!
+        assertTrue(message.contains("connection is active"))
+        assertTrue(message.contains("not confirmed"))
+        assertFalse(message.contains("not a direct office connection"))
+        assertNotNull(WifiRule.rejection("<unknown ssid>", true, false))
+    }
 }

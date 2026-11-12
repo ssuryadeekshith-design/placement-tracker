@@ -491,7 +491,9 @@ class MainActivity : FragmentActivity() {
                     while(visible()) {
                         if(!busy) {
                             AttendanceWifi.startObserving(this@MainActivity)
-                            val connection=runCatching { AttendanceWifi.requireConnected(this@MainActivity) }
+                            val connection = try { Result.success(AttendanceWifi.awaitConnected(this@MainActivity)) }
+                                catch (cancelled: CancellationException) { throw cancelled }
+                                catch (error: Exception) { Result.failure(error) }
                             screen.updateConnection(ReadinessSignal(if(connection.isSuccess) ReadinessState.READY else ReadinessState.UNKNOWN,
                                 if(connection.isSuccess) "Connected" else connection.exceptionOrNull()?.message ?: "Connection unavailable", System.currentTimeMillis()))
                         }
@@ -534,12 +536,17 @@ class MainActivity : FragmentActivity() {
                     screen.showVerifyingOffice()
                 }
                 AttendanceWifi.startObserving(this@MainActivity)
-                val connection=runCatching { AttendanceWifi.requireConnected(this@MainActivity) }
-                connectionDetail=if(connection.isSuccess) "Connected to Shikshavertex_5G" else connection.exceptionOrNull()?.message ?: "Office connection unavailable"
+                connectionDetail="Refreshing the current office connection…"
                 val location = try { LocationAccess.current(this@MainActivity) }
                 catch(cancelled: CancellationException) { throw cancelled }
                 catch(error: Exception) { throw CheckInFailure(AttendanceFailure(AttendanceFailureKind.LOCATION_UNAVAILABLE,
                     error.message ?: "Fresh precise location unavailable",connectionDetail,"Enable precise location, move inside the office and retry. No check-in was submitted.")) }
+                // A GPS lookup may take seconds. Read the connection afterwards,
+                // rather than retaining an earlier failure from the phone prompt.
+                val connection = try { Result.success(AttendanceWifi.awaitConnected(this@MainActivity)) }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) { Result.failure(error) }
+                connectionDetail=if(connection.isSuccess) "Connected to Shikshavertex_5G" else connection.exceptionOrNull()?.message ?: "Office connection unavailable"
                 val decision=locationDecision(location); gpsDetail=decision.reason
                 screen.updateGps(ReadinessSignal(if(decision.allowed) ReadinessState.READY else if(decision.outside) ReadinessState.FAILED else ReadinessState.UNKNOWN,decision.reason,location.time))
                 screen.updateConnection(ReadinessSignal(if(connection.isSuccess) ReadinessState.READY else ReadinessState.FAILED,connectionDetail,System.currentTimeMillis()))

@@ -9,8 +9,9 @@ object WifiRule {
         return value.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
     }
     fun rejection(rawSsid: String?, activeWifi: Boolean, associated: Boolean): String? {
-        if (!activeWifi || !associated) return "Connect this phone to $REQUIRED_SSID at the office before marking attendance. Mobile data and VPN connections do not qualify."
-        val ssid = normalizeSsid(rawSsid) ?: return "Android could not confirm the office connection. Enable precise location and Location services, then reconnect to $REQUIRED_SSID."
+        if (!activeWifi) return "The phone's active connection is not a direct office connection. Select $REQUIRED_SSID and check mobile-data switching or VPN settings. Attendance already saved remains recorded."
+        val ssid = normalizeSsid(rawSsid) ?: return "A wireless connection is active, but Android has not provided its name. Office connection is not confirmed. Keep precise location and Location services enabled, then refresh office readiness."
+        if (!associated) return "Android has not confirmed an active connection to $REQUIRED_SSID yet. Wait a moment, then refresh office readiness."
         if (ssid != REQUIRED_SSID) return "Connect to $REQUIRED_SSID in Android network settings before marking attendance."
         return null
     }

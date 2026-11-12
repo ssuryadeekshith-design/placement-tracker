@@ -214,10 +214,11 @@ class EmployeeDashboardScreen(
 
     private fun buildMode() {
         val card = ui.card(body)
-        ui.section(card, "Office readiness", "Check your position and office connection before marking attendance.")
+        ui.section(card, "Office readiness", "Live status now. Your saved attendance receipt is shown separately.")
         gpsPill = ui.chip(card, "Venue GPS · Not checked", Tone.WARNING)
         connectionPill = ui.chip(card, "Office connection · Not checked", Tone.WARNING)
         card.addView(ui.text("With precise location allowed, readiness refreshes automatically while this dashboard is visible. These checks stay on this phone; they do not save attendance or start daily location sharing. Attendance checks your current position and office connection again when you submit. GPS checks building proximity, not a floor.", 12f, AttendanceUi.MUTED))
+        card.addView(ui.text("A later connection change or an unavailable reading does not cancel attendance already saved. Check your attendance receipt or history for confirmation.", 12f, AttendanceUi.MUTED))
         readinessButton = actionButton(card, "Check office readiness") { actions.onCheckReadiness(this) }
     }
     fun enableReadiness() {

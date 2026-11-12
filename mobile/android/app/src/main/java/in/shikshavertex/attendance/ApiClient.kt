@@ -68,13 +68,13 @@ class ApiClient(context: Context, onConnecting: (Boolean) -> Unit = {}) {
         if (!user.isEmailVerified) throw ApiException(403, "Verify your email before continuing.")
         server.awaitReady()
         val attendance = path.substringBefore('?') in setOf("/attendance", "/attendance/manual")
-        if (attendance) AttendanceWifi.requireConnected(applicationContext)
+        if (attendance) AttendanceWifi.awaitConnected(applicationContext)
         for (attempt in 0..1) {
             val token = user.getIdToken(attempt == 1).await().token ?: throw ApiException(401, "Sign in again.")
             val response = withContext(Dispatchers.IO) {
                 // Bind the submission to the verified office connection Network so Android
                 // cannot silently fall back to cellular if office connection drops.
-                val wifi = if (attendance) AttendanceWifi.requireConnected(applicationContext) else null
+                val wifi = if (attendance) AttendanceWifi.awaitConnected(applicationContext) else null
                 val connection = (wifi?.network?.openConnection(URL(base + path)) ?: URL(base + path).openConnection()) as HttpURLConnection
                 connection.requestMethod = method
                 connection.instanceFollowRedirects = false
@@ -88,7 +88,7 @@ class ApiClient(context: Context, onConnecting: (Boolean) -> Unit = {}) {
                         connection.setRequestProperty("Content-Type", "application/json")
                         val payload = if (body != null) JSONObject(body.toString()) else JSONObject()
                         if (wifi != null) {
-                            val latest = AttendanceWifi.requireConnected(applicationContext)
+                            val latest = AttendanceWifi.awaitConnected(applicationContext)
                             if (latest.network != wifi.network) throw IllegalStateException("The office connection changed before submission. Reconnect and try again.")
                             payload.put("wifi", latest.observation())
                         }

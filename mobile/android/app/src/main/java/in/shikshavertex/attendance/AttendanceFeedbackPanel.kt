@@ -42,6 +42,7 @@ class AttendanceFeedbackPanel(context: Context, parent: LinearLayout, retry: () 
         val time=runCatching { DateTimeFormatter.ofPattern("d MMM yyyy · h:mm:ss a 'IST'").withZone(Workday.zone).format(Instant.parse(value.timestamp)) }.getOrDefault("Original check-in time unavailable")
         val verified=AttendanceFeedback.officeVerified(value)
         detail.text="Checked in at $time\n${if(verified) "Verified at Office" else "Office presence is not fully verified in this saved record."}\nYour first check-in timestamp is locked in. Checking again preserves this original time."
+        if (value.venueWifiObserved) detail.append("\nOffice connection was observed at check-in. The live readiness card shows the connection now.")
         diagnostics.visibility=View.GONE; retryButton.visibility=View.GONE
         icon.show(AttendanceOutcome.SUCCESS,celebrate)
     }
