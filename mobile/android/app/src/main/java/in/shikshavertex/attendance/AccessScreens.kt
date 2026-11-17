@@ -3,7 +3,6 @@ package `in`.shikshavertex.attendance
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
@@ -17,7 +16,6 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -45,7 +43,7 @@ data class HrActions(
 )
 
 /** Shared layout for the remaining account/HR surfaces; networking stays with the Activity. */
-private class AccessFrame(context: Context, title: String, subtitle: String, step: Int = 0, showBrandLogo: Boolean = false) {
+private class AccessFrame(context: Context, title: String, subtitle: String, step: Int = 0) {
     val ui = AttendanceUi(context)
     val body = ui.canvas()
     private val available = mutableListOf<Pair<View, () -> Boolean>>()
@@ -60,26 +58,7 @@ private class AccessFrame(context: Context, title: String, subtitle: String, ste
     }
 
     init {
-        val brand = ui.row().apply {
-            setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16))
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(AttendanceUi.INDIGO, AttendanceUi.BLUE)).apply { cornerRadius = ui.dp(12).toFloat() }
-        }
-        if (showBrandLogo) {
-            brand.addView(ImageView(context).apply {
-                setImageResource(R.drawable.shikshavertex_launcher)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                background = ui.rounded(Color.WHITE, Color.WHITE, 10)
-                clipToOutline = true
-                // The adjacent SHIKSHAVERTEX text supplies the accessible brand name.
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(ui.dp(56), ui.dp(56)).apply { marginEnd = ui.dp(12) })
-        } else {
-            brand.addView(ui.text("SV", 18f, Color.WHITE, true).apply { letterSpacing = .08f }, LinearLayout.LayoutParams(ui.dp(46), -2))
-        }
-        val words = ui.column()
-        words.addView(ui.text("SHIKSHAVERTEX", 12f, Color.WHITE, true).apply { letterSpacing = .12f })
-        words.addView(ui.text("Employee workspace", 12f, Color.rgb(219, 234, 254)))
-        brand.addView(words, LinearLayout.LayoutParams(0, -2, 1f)); body.addView(brand)
+        body.addView(ui.brandHeader(if (step == 0) "HR workspace" else "Employee workspace"))
         ui.space(body, 20)
         if (step > 0) {
             val progress = ui.row()
@@ -141,7 +120,7 @@ private fun gentlePulse(view: View) {
 }
 
 class AuthScreen(context: Context, boundEmail: String, private val actions: AuthActions) {
-    private val frame = AccessFrame(context, "Your workday starts here", "Sign in or register with your work email.", 1, showBrandLogo = true)
+    private val frame = AccessFrame(context, "Your workday starts here", "Sign in or register with your work email.", 1)
     private val ui = frame.ui
     private var registration = false
     private var visiblePassword = false

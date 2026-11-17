@@ -82,13 +82,15 @@ class AttendanceViewerScreen(
     init { build() }
 
     private fun build() {
+        content.addView(ui.brandHeader("Attendance reporting"))
+        ui.space(content, 14)
         val toolbar = ui.row()
         content.addView(toolbar)
         ui.button(toolbar, "‹ Back") { actions.onBack() }.also {
             it.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(12) }
             controls.add(it)
         }
-        val brand = ui.text("SHIKSHAVERTEX", 12f, AttendanceUi.INDIGO, true).apply { gravity = Gravity.CENTER_VERTICAL or Gravity.END }
+        val brand = ui.text("TEAM ATTENDANCE", 11f, AttendanceUi.MUTED, true).apply { gravity = Gravity.CENTER_VERTICAL or Gravity.END }
         toolbar.addView(brand, LinearLayout.LayoutParams(0, -1, 1f))
         ui.space(content, 16)
         content.addView(ui.text("Everyone’s attendance", 26f, AttendanceUi.INDIGO, true))

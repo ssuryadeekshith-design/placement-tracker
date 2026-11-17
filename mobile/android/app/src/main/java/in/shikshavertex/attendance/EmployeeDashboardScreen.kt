@@ -123,6 +123,7 @@ class EmployeeDashboardScreen(
 
     init {
         buildHeader()
+        buildSnapshot()
         buildIdentity()
         buildMode()
         body.addView(dataNotice)
@@ -160,7 +161,8 @@ class EmployeeDashboardScreen(
     }
 
     private fun buildHeader() {
-        body.addView(ui.text("SHIKSHAVERTEX", 12f, AttendanceUi.INDIGO, true).apply { letterSpacing = .14f })
+        body.addView(ui.brandHeader(if (model.isHr) "HR & employee workspace" else "Your employee workspace"))
+        ui.space(body, 20)
         val narrow = context.resources.configuration.screenWidthDp < 360 || context.resources.configuration.fontScale >= 1.3f
         val titleRow = if (narrow) ui.column() else ui.row()
         val title = ui.column()
@@ -173,16 +175,37 @@ class EmployeeDashboardScreen(
         body.addView(titleRow)
         ui.space(body, 14)
         if (model.canViewAll || model.isHr) {
-            val navigation = ui.row()
+            val navigation = if (narrow) ui.column() else ui.row()
             body.addView(navigation)
             if (model.canViewAll) actionButton(navigation, "All attendance", action = actions.onViewAttendance).apply {
                 contentDescription = "View all employees' attendance"
-                layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) }
+                layoutParams = if (narrow) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) }
             }
             if (model.isHr) actionButton(navigation, "HR controls", action = actions.onHrControls).apply {
-                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                layoutParams = if (narrow) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f)
             }
             ui.space(body, 14)
+        }
+    }
+
+    private fun buildSnapshot() {
+        val metrics = if (context.resources.configuration.fontScale >= 1.3f) ui.column() else ui.row()
+        body.addView(metrics)
+        val values = listOf(
+            "Saved check-ins" to model.receipts.size,
+            "Open sessions" to model.events.count { it.date == model.loadedDate && it.checkInOpen },
+        )
+        values.forEachIndexed { index, (label, value) ->
+            val card = ui.card(metrics)
+            card.addView(ui.text(label, 12f, AttendanceUi.MUTED, true))
+            card.addView(ui.text(value.toString(), 28f, if (index == 0) AttendanceUi.GREEN else AttendanceUi.INDIGO, true))
+            card.addView(ui.text("Latest loaded records", 11f, AttendanceUi.MUTED))
+            if (metrics.orientation == LinearLayout.HORIZONTAL) {
+                card.layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    marginEnd = if (index == 0) ui.dp(10) else 0
+                    bottomMargin = ui.dp(16)
+                }
+            }
         }
     }
 
@@ -217,9 +240,10 @@ class EmployeeDashboardScreen(
         ui.section(card, "Office readiness", "Live status now. Your saved attendance receipt is shown separately.")
         gpsPill = ui.chip(card, "Venue GPS · Not checked", Tone.WARNING)
         connectionPill = ui.chip(card, "Office connection · Not checked", Tone.WARNING)
-        card.addView(ui.text("With precise location allowed, readiness refreshes automatically while this dashboard is visible. These checks stay on this phone; they do not save attendance or start daily location sharing. Attendance checks your current position and office connection again when you submit. GPS checks building proximity, not a floor.", 12f, AttendanceUi.MUTED))
+        card.addView(ui.text("With precise location allowed, readiness refreshes while this dashboard is visible. It does not save attendance or start daily location sharing.", 13f, AttendanceUi.MUTED))
         card.addView(ui.text("A later connection change or an unavailable reading does not cancel attendance already saved. Check your attendance receipt or history for confirmation.", 12f, AttendanceUi.MUTED))
         readinessButton = actionButton(card, "Check office readiness") { actions.onCheckReadiness(this) }
+        ui.disclosure(card, "How office checks work", "Readiness observations stay on this phone. Attendance obtains fresh position and office connection checks when you submit. GPS checks building proximity, not a floor. Daily location sharing requires its own consent and can be stopped separately.")
     }
     fun enableReadiness() {
         if (!readinessEnabled || gpsSignal.detail.startsWith("Paused")) {

@@ -126,9 +126,11 @@ class MovementReportScreen(
     init { build() }
 
     private fun build() {
+        body.addView(ui.brandHeader("Movement reporting"))
+        ui.space(body, 14)
         val toolbar = ui.row()
         action(toolbar, "‹ Back", onClick = actions.onBack).layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(10) }
-        toolbar.addView(ui.text("SHIKSHAVERTEX", 11f, AttendanceUi.INDIGO, true).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
+        toolbar.addView(ui.text("DAILY REPORT", 11f, AttendanceUi.MUTED, true).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
         body.addView(toolbar)
         ui.space(body, 20)
         body.addView(ui.text("Movement report", 27f, AttendanceUi.INDIGO, true))

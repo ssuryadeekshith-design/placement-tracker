@@ -6,7 +6,7 @@ import {
   createUserWithEmailAndPassword, onAuthStateChanged, reload,
   sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut,
 } from 'firebase/auth';
-import { CalendarDays, CheckCircle, LogOut, MapPin, ShieldCheck, Mail, Eye, EyeOff } from 'lucide-react';
+import { CalendarDays, LogOut, MapPin, ShieldCheck, Mail, Eye, EyeOff } from 'lucide-react';
 import { auth, firebaseConfigured } from './firebase';
 import api from './api';
 import PhoneVerification, { useAttendanceVerification } from './PhoneVerification';
@@ -16,6 +16,8 @@ import './App.css';
 import VenueGate from './VenueGate';
 import { attendanceToday } from './attendanceReport';
 import { hasAppleAttendance, markAppleAttendance } from './appleAttendance';
+import WorkspaceNavigation from './WorkspaceNavigation';
+import './WorkplaceTheme.css';
 
 const BINDING_KEY = 'placement-bound-email';
 const ADDRESS = '2nd floor, Srivari Arcade, NGR Layout, Roopena Agrahara, Bommanahalli, Bengaluru, Karnataka 560068';
@@ -232,12 +234,12 @@ function AccountApp() {
   const retryApprovedSession = useCallback(() => establishSession(firebaseUser), [establishSession, firebaseUser]);
   const committee = session?.user.role === 'committee';
   const ownLogs = committee ? summary.logs.filter(log => log.uid === session?.user.uid) : summary.logs;
-  return <div className="app-shell">
+  return <div className={`app-shell ${session ? 'is-authenticated' : 'is-public'}`}>
     <header className="app-header"><a className="brand" href="/" aria-label="Shikshavertex Attendance home"><span className="brand-mark"><img className="brand-logo" src={BRAND_LOGO} alt="" /></span><span><strong>SHIKSHAVERTEX</strong><small>Employee workspace</small></span></a>
       <div className="header-actions">{session && <span className="role-badge">{committee ? 'HR administrator' : session.user.role === 'attendance-viewer' ? 'Attendance viewer' : 'Employee'}</span>}{firebaseUser && <button className="header-button" type="button" onClick={logout} disabled={busy}><LogOut size={16} aria-hidden="true" /> Sign out</button>}</div>
     </header>
     <main className="workspace-main">
-      <div className="page-intro"><p className="eyebrow">PEOPLE & ATTENDANCE · BENGALURU</p><h1>{session ? `Welcome${session.user.fullName ? `, ${session.user.fullName}` : ''}` : 'Your workday, in one place.'}</h1><p>{session ? 'Attendance, account access and clearly labelled reports.' : 'Register with your work email, verify your identity and manage your attendance.'}</p></div>
+      <div className="page-intro"><p className="eyebrow">PEOPLE & ATTENDANCE · BENGALURU</p><h1>{session ? `Welcome${session.user.fullName ? `, ${session.user.fullName}` : ''}` : 'Your workday, in one place.'}</h1><p>{session ? committee ? 'Your team’s attendance, employee approvals and session controls.' : session.user.role === 'attendance-viewer' ? 'Review attendance records and export the reports you need.' : 'Your check-ins, attendance history and work account.' : 'Register with your work email, verify your identity and manage your attendance.'}</p></div>
       {error && <div className="alert error" role="alert">{error}</div>}
       {notice && <div className="alert success" role="status">{notice}</div>}
       {loading ? <section className="card auth-card loading-card" role="status"><span className="loading-dot" />Loading your attendance portal…</section> : !firebaseConfigured ?
@@ -250,21 +252,16 @@ function AccountApp() {
               <label htmlFor="password">Password</label><div className="password-field"><input id="password" type={showPassword ? 'text' : 'password'} autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} minLength={6} required disabled={busy} /><button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} disabled={busy} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
               <button className="primary full-width" type="submit" disabled={busy}>{busy ? 'Please wait…' : authMode === 'register' ? 'Register & verify email' : 'Sign in'}</button>
             </form><button className="text-button" type="button" onClick={resetPassword} disabled={busy || !email.trim()}>Forgot your password?</button>
-          </section><aside className="onboarding"><div className="onboarding-art" aria-hidden="true"><img src={BRAND_LOGO} alt="" /></div><p className="eyebrow">A CLEAR START TO YOUR WORKDAY</p><h2>One account. Your attendance.</h2><ol><li><strong>Create your account</strong><span>Register once using your own verified work email.</span></li><li><strong>Confirm your identity</strong><span>Follow the email link and complete HR approval when required.</span></li><li><strong>Check in with your phone</strong><span>Verify your identity and check in at the office.</span></li></ol><p className="field-help">A browser profile binding is retained at sign-out. Clearing storage or using another profile can reset it; it is not a permanent phone identifier.</p></aside></div>
+          </section><aside className="onboarding"><div className="onboarding-art" aria-hidden="true"><img src={BRAND_LOGO} alt="" /><span className="onboarding-wordmark">SHIKSHAVERTEX<small>People & attendance</small></span></div><p className="eyebrow">A CLEAR START TO YOUR WORKDAY</p><h2>One account.<br />Your attendance.</h2><p className="onboarding-lead">A clear path from your work account to your attendance record.</p><ol><li><strong>Create your account</strong><span>Register once using your own verified work email.</span></li><li><strong>Confirm your identity</strong><span>Follow the email link and complete HR approval when required.</span></li><li><strong>Check in with your phone</strong><span>Verify your identity and check in at the office.</span></li></ol><p className="field-help">A browser profile binding is retained at sign-out. Clearing storage or using another profile can reset it; it is not a permanent phone identifier.</p></aside></div>
           : !firebaseUser.emailVerified ? <section className="card auth-card verification-card"><ol className="account-stepper" aria-label="Account setup progress"><li>1 · Account</li><li aria-current="step">2 · Verify email</li><li>3 · Approval</li></ol><div className="icon-box mail-pulse"><Mail size={28} aria-hidden="true" /></div><h2>Verify your email</h2><p>Open the verification link sent to <strong>{firebaseUser.email}</strong>, then return here.</p><div className="stack"><button className="primary" type="button" onClick={verifyAgain} disabled={busy}>I have verified my email</button><button className="secondary" type="button" onClick={sendVerification} disabled={busy || resendWait > 0}>{resendWait ? `Resend in ${resendWait}s` : 'Resend verification email'}</button></div></section>
             : !session && approvalRequired ? <EmployeeApplication email={firebaseUser.email} onApproved={retryApprovedSession} />
               : !session ? <section className="card auth-card"><h2>Account access unavailable</h2><p>Your account could not be registered for attendance. Check the message above or contact HR.</p><button className="secondary" onClick={() => establishSession(firebaseUser)} disabled={busy}>Try again</button></section>
-              : <div className="workspace-layout"><nav className="workspace-nav" aria-label="Workspace navigation"><p className="eyebrow">YOUR WORKSPACE</p><p className="nav-identity">{session.user.email}</p>
-                  {session.user.role !== 'attendance-viewer' && <><a href="#my-check-in"><MapPin size={17} aria-hidden="true" />My check-in</a><a href="#my-history"><CalendarDays size={17} aria-hidden="true" />Attendance history</a></>}
-                  {(session.user.canViewAllAttendance || committee) && <a href="#all-attendance"><CheckCircle size={17} aria-hidden="true" />Everyone’s attendance</a>}
-                  {committee && <><a href="#hr-directory"><ShieldCheck size={17} aria-hidden="true" />Directory & approvals</a><a href="#hr-controls"><CalendarDays size={17} aria-hidden="true" />Session controls</a></>}
-                  {session.user.role !== 'attendance-viewer' && <a href="#movement-report"><MapPin size={17} aria-hidden="true" />{committee ? 'Movement reports' : 'My movement report'}</a>}
-                  <p className="field-help">{session.user.role === 'attendance-viewer' ? 'Read-only attendance access.' : 'Check-ins and location sharing have separate consent.'}</p>
-                </nav><div className="workspace-content">
+              : <div className="workspace-layout"><WorkspaceNavigation user={session.user} committee={committee} /><div className="workspace-content">
+                {(session.user.role === 'attendance-viewer' || committee) && <div id="all-attendance" className="workspace-section"><AttendanceDashboard key={session.user.uid} revision={reportRevision} /></div>}
+                {committee && <><div id="hr-directory" className="workspace-section"><EmployeeAdministration onChanged={accountsChanged} /></div><div id="hr-controls" className="workspace-section"><Committee venue={session.venue} events={events} logs={summary.logs} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} /></div></>}
                 {session.user.role !== 'attendance-viewer' && <><section id="my-check-in" className="workspace-section"><Venue venue={session.venue} /><CheckIn key={session.user.uid} employeeUid={session.user.uid} onRecorded={recorded} events={events} logs={ownLogs} venue={session.venue} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} /></section>
                   <section id="my-history" className="card workspace-section"><div className="section-heading"><div className="icon-box"><CalendarDays aria-hidden="true" /></div><div><h2>Your attendance</h2><p>Your original recorded session check-ins.</p></div></div><History logs={ownLogs} events={events} /></section></>}
-                {(session.user.canViewAllAttendance || committee) && <div id="all-attendance" className="workspace-section"><AttendanceDashboard key={session.user.uid} revision={reportRevision} /></div>}
-                {committee && <><div id="hr-directory" className="workspace-section"><EmployeeAdministration onChanged={accountsChanged} /></div><div id="hr-controls" className="workspace-section"><Committee venue={session.venue} events={events} logs={summary.logs} onRefresh={refresh} busy={busy} setBusy={setBusy} setError={setError} setNotice={setNotice} /></div></>}
+                {session.user.canViewAllAttendance && !committee && session.user.role !== 'attendance-viewer' && <div id="all-attendance" className="workspace-section"><AttendanceDashboard key={session.user.uid} revision={reportRevision} /></div>}
                 {session.user.role !== 'attendance-viewer' && <div id="movement-report" className="workspace-section"><DailyReport key={session.user.uid} user={session.user} accountsRevision={accountsRevision} /></div>}
                 <p className="privacy-note"><ShieldCheck size={17} aria-hidden="true" />This browser is registered to {session.user.email}. Location is checked when you submit attendance, not when you open the app. Signing out preserves the browser binding.</p>
               </div></div>}
